@@ -752,13 +752,8 @@ export async function deleteScene(sceneId) {
     throw new Error('Missing required sceneId to delete.');
   }
 
-  const cleanId = String(sceneId).replace(/\.(splat|ply|json)$/, '').trim();
+  const cleanId = String(sceneId).replace(/\.(splat|ply|json|chunks\.bin)$/, '').trim();
   console.log(`[JobService] Deleting scene and associated storage for "${cleanId}"...`);
-
-  // Protect default sample space if attempted
-  if (cleanId === 'scene') {
-    throw new Error('The default demo space "scene" is protected and cannot be deleted.');
-  }
 
   // 1. Retrieve metadata before deleting to discover associated videoId and filenames
   const meta = await getModelMeta(cleanId);
