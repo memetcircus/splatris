@@ -580,7 +580,13 @@ function parseAndChunkMonolithicPLY(buffer, gridDim = 4) {
   }
 
   const meshes = [];
-  const sharedMat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  const sharedMat = new THREE.MeshBasicMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    transparent: true,
+    alphaTest: 0.15,
+    depthWrite: true,
+  });
 
   for (const [chunkId, chunk] of chunkBuffers.entries()) {
     const geo = new THREE.BufferGeometry();
@@ -698,6 +704,9 @@ async function loadChunkedTriangleMesh(url) {
     const sharedMat = new THREE.MeshBasicMaterial({
       vertexColors: true,
       side: THREE.DoubleSide,
+      transparent: true,
+      alphaTest: 0.15,
+      depthWrite: true,
     });
 
     for (let c = 0; c < numChunks; c++) {
@@ -755,6 +764,20 @@ async function loadChunkedTriangleMesh(url) {
   STATE.splatPivotGroup.add(meshGroup);
   STATE.splatMesh = STATE.splatPivotGroup;
 
+  // Auto-align and ground the mesh on the floor at Y=0
+  const box = new THREE.Box3().setFromObject(meshGroup);
+  if (!box.isEmpty()) {
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+    const rawHeight = Math.max(0.01, size.y);
+    const autoScale = rawHeight > 0.05 ? 1.0 / rawHeight : 1.0;
+    meshGroup.scale.set(autoScale, autoScale, autoScale);
+    meshGroup.position.set(-center.x * autoScale, -box.min.y * autoScale, -center.z * autoScale);
+    STATE.splatPivotGroup.position.set(0, 1.0, 0); // table/pedestal height
+  }
+
   if (overlayBar) overlayBar.style.width = '100%';
   if (overlay) overlay.classList.add('hidden');
 
@@ -766,6 +789,26 @@ async function loadChunkedTriangleMesh(url) {
 
 async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
   const sessionId = ++activeLoadSessionId;
+
+  // Always clean up previous triangle mesh chunks
+  disposeTriangleMeshChunks();
+
+  // If a .chunks.bin or .ply was directly requested, check if high-fidelity .splat exists
+  if (url && (url.toLowerCase().endsWith('.chunks.bin') || url.toLowerCase().endsWith('.ply'))) {
+    const companionSplat = url.replace(/\.(chunks\.bin|ply)$/i, '.splat');
+    try {
+      const splatCheck = await fetch(companionSplat, { method: 'HEAD' });
+      if (splatCheck.ok) {
+        console.log(`[Splatris] Found companion high-fidelity radiance splat: ${companionSplat}. Rendering via DropInViewer.`);
+        url = companionSplat;
+      } else {
+        console.log(`[Splatris] Loading pure triangle mesh container: ${url}`);
+        return await loadChunkedTriangleMesh(url);
+      }
+    } catch {
+      return await loadChunkedTriangleMesh(url);
+    }
+  }
 
   // Determine if active scene is Triangle Splatting
   let isTriangle = STATE.trainingMethod === 'triangle' || STATE.activeScene?.trainingMethod === 'triangle';
@@ -781,15 +824,6 @@ async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
       isTriangle = true;
     }
   }
-
-  // If Triangle Splatting mesh or .ply / .chunks.bin requested, load via Chunked Triangle Mesh Engine
-  if (isTriangle || url.toLowerCase().endsWith('.ply') || url.toLowerCase().endsWith('.chunks.bin')) {
-    console.log(`[Splatris] Loading Triangle Splatting scene as spatially chunked mesh: ${url}`);
-    return await loadChunkedTriangleMesh(url);
-  }
-
-  // Otherwise, standard 3DGS or Image2Splat: clean up previous triangle mesh chunks
-  disposeTriangleMeshChunks();
 
   const isPly = url.toLowerCase().endsWith('.ply');
   const countPill = document.getElementById('stat-splat-count');
