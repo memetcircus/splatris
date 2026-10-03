@@ -1,0 +1,19 @@
+# Nebius GPU 3D Gaussian Splatting Dependencies (CUDA 12.x / Ubuntu 22.04)
+torch>=2.1.0
+torchvision>=0.16.0
+numpy>=1.24.0
+scipy>=1.10.0
+plyfile>=1.0.0
+pillow>=9.5.0
+fastapi>=0.109.0
+uvicorn>=0.27.0
+python-multipart>=0.0.9
+requests>=2.31.0
+tqdm>=4.66.0
+
+# 3DGS Rasterization / Optimization
+# Install via: pip install gsplat
+# or clone diff-gaussian-rasterization:
+# git clone --recursive https://github.com/ashawkey/diff-gaussian-rasterization
+# pip install ./diff-gaussian-rasterization
+gsplat>=1.0.0
