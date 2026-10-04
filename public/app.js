@@ -28,6 +28,7 @@ let audioCtx = null;
 let pannerNode = null;
 let audioListener = null;
 let threeAudioListener = null;
+let isXrHudVisibleByUser = true;
 
 function initSpatialAudio() {
   if (threeAudioListener && audioCtx) return;
@@ -228,10 +229,19 @@ if ('xr' in navigator) {
       performRaycastSelectionXR(origin, direction);
     }
   };
+  const onXRSqueeze = (e) => {
+    isXrHudVisibleByUser = !isXrHudVisibleByUser;
+    if (xrHudMesh) {
+      xrHudMesh.visible = isXrHudVisibleByUser;
+      console.log(`[WebXR] HUD toggled via grip button: visible=${isXrHudVisibleByUser}`);
+    }
+  };
   controller0.addEventListener('selectstart', onXRSelectStart);
   controller1.addEventListener('selectstart', onXRSelectStart);
   controller0.addEventListener('select', onXRSelect);
   controller1.addEventListener('select', onXRSelect);
+  controller0.addEventListener('squeeze', onXRSqueeze);
+  controller1.addEventListener('squeeze', onXRSqueeze);
 }
 
 // Camera Controls: OrbitControls (turntable) and TrackballControls (full 3-axis free rotation)
@@ -1248,7 +1258,7 @@ function animate() {
       }
 
       // "World Space + Render Loop" HUD Update (The Chase Method)
-      if (xrHudMesh && xrHudMesh.visible) {
+      if (xrHudMesh && xrHudMesh.visible && isXrHudVisibleByUser) {
         if (xrHudMesh.parent !== scene) {
           if (xrHudMesh.parent) xrHudMesh.parent.remove(xrHudMesh);
           scene.add(xrHudMesh);
@@ -1259,7 +1269,7 @@ function animate() {
         xrCamera.getWorldPosition(camPos);
         xrCamera.getWorldQuaternion(camQuat);
 
-        const offset = new THREE.Vector3(-0.3, 0.0, -0.8);
+        const offset = new THREE.Vector3(0.0, -0.1, -0.6);
         offset.applyQuaternion(camQuat);
         xrHudMesh.position.copy(camPos).add(offset);
         xrHudMesh.quaternion.copy(camQuat);
@@ -3429,12 +3439,13 @@ if (btnWebXR) {
           xrCamera.getWorldPosition(camPos);
           xrCamera.getWorldQuaternion(camQuat);
 
-          const offset = new THREE.Vector3(-0.3, 0.0, -0.8);
+          const offset = new THREE.Vector3(0.0, -0.1, -0.6);
           offset.applyQuaternion(camQuat);
           xrHudMesh.position.copy(camPos).add(offset);
           xrHudMesh.quaternion.copy(camQuat);
+          isXrHudVisibleByUser = true;
           xrHudMesh.visible = true;
-          console.log('[WebXR] In-world HUD chase initialized in scene at offset (-0.3, 0.0, -0.8)');
+          console.log('[WebXR] In-world HUD chase initialized in scene at offset (0.0, -0.1, -0.6)');
         }
 
         // Attach THREE.AudioListener to the active XR camera so spatial audio doesn't drop to 0 when walking
@@ -4210,7 +4221,12 @@ function takeScreenshot({ targetPoint = null, crop = false, screenX = null, scre
     const wasReticleVisible = raycastTargetMesh ? raycastTargetMesh.visible : false;
     if (raycastTargetMesh) raycastTargetMesh.visible = false;
     const wasHudVisible = xrHudMesh ? xrHudMesh.visible : false;
-    if (xrHudMesh) xrHudMesh.visible = false;
+    if (xrHudMesh) {
+      xrHudMesh.visible = false;
+      if (xrHudMesh.parent) {
+        xrHudMesh.parent.remove(xrHudMesh);
+      }
+    }
 
     const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
 
@@ -4270,9 +4286,12 @@ function takeScreenshot({ targetPoint = null, crop = false, screenX = null, scre
       renderer.xr.enabled = prevXrEnabled;
       snapTarget.dispose();
 
-      // Restore reticle & HUD
+      // Restore reticle & HUD (respecting user grip toggle state)
       if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
-      if (xrHudMesh) xrHudMesh.visible = wasHudVisible;
+      if (xrHudMesh) {
+        if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
+        xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
+      }
 
       // Transfer to 2D canvas and flip Y (WebGL bottom-up to canvas top-down)
       const snapCanvas = document.createElement('canvas');
@@ -4332,12 +4351,20 @@ function takeScreenshot({ targetPoint = null, crop = false, screenX = null, scre
       }
     }
 
-    // Restore reticle visibility and re-render
+    // Restore reticle visibility and HUD
     if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
-    if (xrHudMesh) xrHudMesh.visible = wasHudVisible;
+    if (xrHudMesh) {
+      if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
+      xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
+    }
 
     return dataUrl;
   } catch (err) {
+    if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
+    if (xrHudMesh) {
+      if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
+      xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
+    }
     console.warn('[SpatialRaycast] takeScreenshot error:', err);
     return null;
   }
@@ -4473,15 +4500,15 @@ function createXRInWorldHUD() {
   if (xrHudMesh) return xrHudMesh;
 
   xrHudCanvas = document.createElement('canvas');
-  xrHudCanvas.width = 768;
-  xrHudCanvas.height = 360;
+  xrHudCanvas.width = 512;
+  xrHudCanvas.height = 420;
 
   xrHudTexture = new THREE.CanvasTexture(xrHudCanvas);
   xrHudTexture.minFilter = THREE.LinearFilter;
   xrHudTexture.magFilter = THREE.LinearFilter;
   xrHudTexture.needsUpdate = true;
 
-  const hudGeo = new THREE.PlaneGeometry(0.65, 0.3);
+  const hudGeo = new THREE.PlaneGeometry(1, 1);
   const hudMat = new THREE.MeshBasicMaterial({
     map: xrHudTexture,
     transparent: true,
@@ -4503,8 +4530,8 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
   lastHudContent = { title, subtitle, status };
   if (!xrHudCanvas || !xrHudTexture || !xrHudMesh) return;
 
-  const canvasWidth = 768;
-  const paddingX = 36;
+  const canvasWidth = 512;
+  const paddingX = 24;
   const maxTextWidth = canvasWidth - (paddingX * 2);
 
   // Measure and wrap lines dynamically
@@ -4513,32 +4540,41 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
 
   let lines = [];
   if (status) {
-    const rawWords = status.replace(/[*_#`~[\]()]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
-    let currentLine = '';
-    for (const w of rawWords) {
-      const testLine = currentLine ? `${currentLine} ${w}` : w;
-      if (tempCtx.measureText(testLine).width <= maxTextWidth) {
-        currentLine = testLine;
-      } else {
-        if (currentLine) lines.push(currentLine);
-        currentLine = w;
+    const rawParagraphs = status.split('\n');
+    for (const paragraph of rawParagraphs) {
+      if (!paragraph.trim()) {
+        lines.push('');
+        continue;
       }
+      const rawWords = paragraph.replace(/[*_#`~[\]()]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
+      let currentLine = '';
+      for (const w of rawWords) {
+        const testLine = currentLine ? `${currentLine} ${w}` : w;
+        if (tempCtx.measureText(testLine).width <= maxTextWidth) {
+          currentLine = testLine;
+        } else {
+          if (currentLine) lines.push(currentLine);
+          currentLine = w;
+        }
+      }
+      if (currentLine) lines.push(currentLine);
     }
-    if (currentLine) lines.push(currentLine);
   } else {
     lines = [
+      'Press Grip button to hide/show panel.',
+      'Pull Trigger to scan an object.',
+      '',
       '🕹️ Left Stick: Move & Glide into Scene',
       '🔄 Right Stick: Turn & Fly Up / Down',
-      '🎯 Controller Trigger: Point laser to inspect object details',
     ];
   }
 
-  // Calculate dynamic canvas height based on wrapped lines (zero truncation)
+  // Calculate dynamic canvas height based on wrapped lines
   const lineHeight = 26;
   const topHeaderHeight = subtitle ? 96 : 72;
-  const textContentHeight = Math.max(78, lines.length * lineHeight + 16);
+  const textContentHeight = Math.max(90, lines.length * lineHeight + 18);
   const exitButtonHeight = 56;
-  const totalCanvasHeight = Math.max(300, Math.min(1000, topHeaderHeight + textContentHeight + exitButtonHeight + 36));
+  const totalCanvasHeight = Math.max(340, Math.min(1400, topHeaderHeight + textContentHeight + exitButtonHeight + 36));
 
   xrHudCanvas.width = canvasWidth;
   xrHudCanvas.height = totalCanvasHeight;
@@ -4558,20 +4594,20 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
   // Header Title
   ctx.fillStyle = '#38bdf8';
   ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  const cleanTitle = (title || 'SPLATRIS WEBXR').slice(0, 36);
+  const cleanTitle = (title || 'SPLATRIS WEBXR').slice(0, 32);
   ctx.fillText(cleanTitle, paddingX, 48);
 
   // Status green pulse dot
   ctx.fillStyle = '#10b981';
   ctx.beginPath();
-  ctx.arc(canvasWidth - 44, 42, 8, 0, Math.PI * 2);
+  ctx.arc(canvasWidth - 36, 42, 8, 0, Math.PI * 2);
   ctx.fill();
 
   // Subtitle / category
   if (subtitle) {
     ctx.fillStyle = '#06b6d4';
     ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(subtitle.slice(0, 60), paddingX, 78);
+    ctx.fillText(subtitle.slice(0, 48), paddingX, 78);
   }
 
   // Body text lines
@@ -4579,7 +4615,9 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
   ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   let curY = topHeaderHeight + 14;
   for (const line of lines) {
-    ctx.fillText(line, paddingX, curY);
+    if (line) {
+      ctx.fillText(line, paddingX, curY);
+    }
     curY += lineHeight;
   }
 
@@ -4594,18 +4632,17 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
   ctx.stroke();
 
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('🚪 Click or Press [ B / Y ] to Exit WebXR', canvasWidth / 2, btnY + 28);
   ctx.textAlign = 'left';
 
-  // Dynamic PlaneGeometry resizing to match calculated aspect ratio exactly
-  const planeWidth = 0.65;
-  const planeHeight = (totalCanvasHeight / canvasWidth) * planeWidth;
-  if (xrHudMesh.geometry) {
-    xrHudMesh.geometry.dispose();
+  // Action: Scale the PlaneGeometry proportionally based on the wrapped canvas:
+  // hud.scale.set(0.4, 0.4 * (canvas.height / canvas.width), 1);
+  if (!xrHudMesh.geometry) {
+    xrHudMesh.geometry = new THREE.PlaneGeometry(1, 1);
   }
-  xrHudMesh.geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
+  xrHudMesh.scale.set(0.4, 0.4 * (totalCanvasHeight / canvasWidth), 1);
   if (xrHudMesh.material) {
     xrHudMesh.material.depthTest = false;
     xrHudMesh.material.depthWrite = false;
@@ -4622,8 +4659,8 @@ function checkXRExitButtonHit(origin, direction) {
   if (hits.length > 0) {
     const uv = hits[0].uv;
     // In Three.js plane UVs, y goes from 0 at the bottom to 1 at the top.
-    // The exit button is at the bottom of the card (uv.y < 0.28).
-    if (uv && uv.y < 0.28) {
+    const exitBtnNormalizedHeight = xrHudCanvas ? (70 / xrHudCanvas.height) : 0.2;
+    if (uv && uv.y < exitBtnNormalizedHeight) {
       console.log(`[Splatris] In-VR Exit HUD clicked (uv.y=${uv.y.toFixed(2)}): Ending WebXR session...`);
       const session = renderer.xr.getSession();
       if (session) {
