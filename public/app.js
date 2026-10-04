@@ -3254,23 +3254,41 @@ function updateSpaceRagPresets(videoId) {
 }
 
 // --- WebXR Button Handler ---
+let isRequestingXRSession = false;
 const btnWebXR = document.getElementById('btn-webxr');
 if (btnWebXR) {
-  btnWebXR.addEventListener('click', async () => {
+  btnWebXR.addEventListener('click', async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+
+    // Prevent rapid double-tap concurrency in Quest browser
+    if (isRequestingXRSession) {
+      console.log('[WebXR] Session request already in flight. Ignoring duplicate tap.');
+      return;
+    }
+
     initSpatialAudio();
     if (!navigator.xr) {
       alert('WebXR is not supported in this browser. You can explore the 3D space using touch or mouse.');
       return;
     }
 
-    try {
-      // If already presenting, toggle off cleanly
-      if (renderer.xr.isPresenting) {
-        const currentSession = renderer.xr.getSession();
-        if (currentSession) await currentSession.end();
-        return;
+    // If already presenting or an active session exists, toggle off cleanly
+    const currentSession = renderer.xr.getSession();
+    if (renderer.xr.isPresenting || currentSession) {
+      if (currentSession) {
+        try {
+          await currentSession.end();
+        } catch (endErr) {
+          console.warn('[WebXR] Error ending session:', endErr);
+        }
       }
+      return;
+    }
 
+    isRequestingXRSession = true;
+    btnWebXR.style.pointerEvents = 'none';
+
+    try {
       const supported = await navigator.xr.isSessionSupported('immersive-vr');
       if (supported) {
         if (renderer.xr.setFramebufferScaleFactor) {
@@ -3424,8 +3442,24 @@ if (btnWebXR) {
         }
       }
     } catch (err) {
-      console.warn('WebXR session request notice:', err);
-      alert(`WebXR: ${err.message || 'Unable to launch VR session'}`);
+      console.warn('WebXR session request error:', err);
+      if (err.message && err.message.toLowerCase().includes('already an active')) {
+        const existing = renderer.xr.getSession();
+        if (existing) {
+          try {
+            await existing.end();
+          } catch (e) {}
+        }
+        if (btnWebXR.querySelector('span')) {
+          btnWebXR.querySelector('span').textContent = 'Enter WebXR';
+        }
+        showToast('Previous VR session cleared. Please tap Enter WebXR again.', 'info', 3000);
+      } else {
+        showToast(`WebXR: ${err.message || 'Unable to launch VR session'}`, 'error', 4000);
+      }
+    } finally {
+      isRequestingXRSession = false;
+      btnWebXR.style.pointerEvents = 'auto';
     }
   });
 }
