@@ -27,22 +27,28 @@ const STATE = {
 let audioCtx = null;
 let pannerNode = null;
 let audioListener = null;
+let threeAudioListener = null;
 
 function initSpatialAudio() {
-  if (audioCtx) return;
+  if (threeAudioListener && audioCtx) return;
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    audioCtx = new AudioContext();
-    audioListener = audioCtx.listener;
+    if (!threeAudioListener) {
+      threeAudioListener = new THREE.AudioListener();
+      camera.add(threeAudioListener);
+    }
+    audioCtx = threeAudioListener.context;
+    audioListener = threeAudioListener;
 
-    pannerNode = audioCtx.createPanner();
-    pannerNode.panningModel = 'HRTF';
-    pannerNode.distanceModel = 'inverse';
-    pannerNode.refDistance = 1;
-    pannerNode.maxDistance = 10000;
-    pannerNode.rolloffFactor = 1;
-    pannerNode.coneInnerAngle = 360;
-    pannerNode.connect(audioCtx.destination);
+    if (!pannerNode && audioCtx) {
+      pannerNode = audioCtx.createPanner();
+      pannerNode.panningModel = 'HRTF';
+      pannerNode.distanceModel = 'inverse';
+      pannerNode.refDistance = 1;
+      pannerNode.maxDistance = 10000;
+      pannerNode.rolloffFactor = 1;
+      pannerNode.coneInnerAngle = 360;
+      pannerNode.connect(audioCtx.destination);
+    }
   } catch (err) {
     console.warn('Web Audio Spatial API initialization note:', err.message);
   }
@@ -177,6 +183,17 @@ if ('xr' in navigator) {
   controller1.add(new THREE.Line(rayGeo, rayMat));
 
   const onXRSelect = (e) => {
+    // Explicitly resume audio context inside VR session to satisfy browser autoplay policy
+    initSpatialAudio();
+    if (threeAudioListener && threeAudioListener.context && threeAudioListener.context.state === 'suspended') {
+      threeAudioListener.context.resume().catch((err) => console.warn('[WebXR] Audio resume error:', err));
+    } else if (audioCtx && audioCtx.state === 'suspended') {
+      audioCtx.resume().catch((err) => console.warn('[WebXR] Audio resume error:', err));
+    }
+    if ('speechSynthesis' in window && window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+    }
+
     // Prevent multi-trigger API spam & pipeline lockup in WebXR mode
     if (STATE.isRaycastQuerying) {
       console.log('[Splatris] WebXR raycast trigger ignored: inspection query already in progress');
@@ -1213,6 +1230,13 @@ function animate() {
       if (STATE.dropInViewer) {
         STATE.dropInViewer.frustumCulled = false;
         if (STATE.dropInViewer.splatMesh) STATE.dropInViewer.splatMesh.frustumCulled = false;
+      }
+
+      // Ensure Head-locked HUD remains attached to camera at top-left FOV
+      if (xrHudMesh && xrHudMesh.visible && xrHudMesh.parent !== camera) {
+        camera.add(xrHudMesh);
+        xrHudMesh.position.set(-0.5, 0.3, -1.5);
+        xrHudMesh.rotation.set(-0.06, 0.22, 0);
       }
 
       // 2. Increase Camera Far Plane to 1000.0 so environment never clips out during room-scale walk
@@ -3330,13 +3354,28 @@ if (btnWebXR) {
         }
         cameraRig.rotation.set(0, 0, 0);
 
-        // Display in-VR floating HUD card with locomotion guide and clickable Exit button
+        // Display in-VR head-locked floating HUD card (attached to camera at top-left FOV)
         createXRInWorldHUD();
         if (xrHudMesh) {
+          if (xrHudMesh.parent) {
+            xrHudMesh.parent.remove(xrHudMesh);
+          }
+          camera.add(xrHudMesh);
+          xrHudMesh.position.set(-0.5, 0.3, -1.5);
+          xrHudMesh.rotation.set(-0.06, 0.22, 0);
           xrHudMesh.visible = true;
-          // Float HUD card 1.3m forward and slightly to the left, 1.25m height
-          xrHudMesh.position.set(-0.55, 1.25, -1.25).add(cameraRig.position);
-          xrHudMesh.lookAt(cameraRig.position.x, 1.25, cameraRig.position.z);
+          console.log('[WebXR] Head-locked HUD attached to camera at (-0.5, 0.3, -1.5)');
+        }
+
+        // Attach THREE.AudioListener to the active XR camera so spatial audio doesn't drop to 0 when walking
+        initSpatialAudio();
+        if (threeAudioListener) {
+          const xrCam = renderer.xr.getCamera(camera);
+          if (threeAudioListener.parent) {
+            threeAudioListener.parent.remove(threeAudioListener);
+          }
+          xrCam.add(threeAudioListener);
+          console.log('[SpatialAudio] Attached THREE.AudioListener to active WebXR Camera.');
         }
 
         session.addEventListener('end', () => {
@@ -3361,7 +3400,19 @@ if (btnWebXR) {
             }
           }
 
-          if (xrHudMesh) xrHudMesh.visible = false;
+          if (xrHudMesh) {
+            xrHudMesh.visible = false;
+            if (xrHudMesh.parent) {
+              xrHudMesh.parent.remove(xrHudMesh);
+            }
+          }
+          if (threeAudioListener) {
+            if (threeAudioListener.parent) {
+              threeAudioListener.parent.remove(threeAudioListener);
+            }
+            camera.add(threeAudioListener);
+            console.log('[SpatialAudio] Re-attached THREE.AudioListener to default perspective camera.');
+          }
           showToast('Exited WebXR. Returned to 2D browser view.', 'info', 3000);
         });
       } else {
@@ -4298,37 +4349,82 @@ function createXRInWorldHUD() {
   if (xrHudMesh) return xrHudMesh;
 
   xrHudCanvas = document.createElement('canvas');
-  xrHudCanvas.width = 512;
-  xrHudCanvas.height = 256;
+  xrHudCanvas.width = 768;
+  xrHudCanvas.height = 360;
 
   xrHudTexture = new THREE.CanvasTexture(xrHudCanvas);
+  xrHudTexture.minFilter = THREE.LinearFilter;
+  xrHudTexture.magFilter = THREE.LinearFilter;
   xrHudTexture.needsUpdate = true;
 
-  const hudGeo = new THREE.PlaneGeometry(0.85, 0.425);
+  const hudGeo = new THREE.PlaneGeometry(0.88, 0.41);
   const hudMat = new THREE.MeshBasicMaterial({
     map: xrHudTexture,
     transparent: true,
-    side: THREE.DoubleSide
+    side: THREE.DoubleSide,
+    depthTest: false, // Never occluded or clipped by scene geometry
+    depthWrite: false,
   });
   xrHudMesh = new THREE.Mesh(hudGeo, hudMat);
   xrHudMesh.name = 'xrHudMesh';
+  xrHudMesh.renderOrder = 9999;
   xrHudMesh.visible = false;
-  scene.add(xrHudMesh);
+  // NOTE: Head-locked HUD: attached directly to camera on WebXR presentation (not to scene)
 
   updateXRHUDContent();
   return xrHudMesh;
 }
 
 function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = '' } = {}) {
-  if (!xrHudCanvas || !xrHudTexture) return;
+  if (!xrHudCanvas || !xrHudTexture || !xrHudMesh) return;
+
+  const canvasWidth = 768;
+  const paddingX = 36;
+  const maxTextWidth = canvasWidth - (paddingX * 2);
+
+  // Measure and wrap lines dynamically
+  const tempCtx = xrHudCanvas.getContext('2d');
+  tempCtx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+  let lines = [];
+  if (status) {
+    const rawWords = status.replace(/[*_#`~[\]()]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
+    let currentLine = '';
+    for (const w of rawWords) {
+      const testLine = currentLine ? `${currentLine} ${w}` : w;
+      if (tempCtx.measureText(testLine).width <= maxTextWidth) {
+        currentLine = testLine;
+      } else {
+        if (currentLine) lines.push(currentLine);
+        currentLine = w;
+      }
+    }
+    if (currentLine) lines.push(currentLine);
+  } else {
+    lines = [
+      '🕹️ Left Stick: Move & Glide into Scene',
+      '🔄 Right Stick: Turn & Fly Up / Down',
+      '🎯 Controller Trigger: Point laser to inspect object details',
+    ];
+  }
+
+  // Calculate dynamic canvas height based on wrapped lines (zero truncation)
+  const lineHeight = 26;
+  const topHeaderHeight = subtitle ? 96 : 72;
+  const textContentHeight = Math.max(78, lines.length * lineHeight + 16);
+  const exitButtonHeight = 56;
+  const totalCanvasHeight = Math.max(300, Math.min(1000, topHeaderHeight + textContentHeight + exitButtonHeight + 36));
+
+  xrHudCanvas.width = canvasWidth;
+  xrHudCanvas.height = totalCanvasHeight;
 
   const ctx = xrHudCanvas.getContext('2d');
-  ctx.clearRect(0, 0, xrHudCanvas.width, xrHudCanvas.height);
+  ctx.clearRect(0, 0, canvasWidth, totalCanvasHeight);
 
   // Glassmorphic dark card
   ctx.fillStyle = 'rgba(11, 19, 38, 0.94)';
   ctx.beginPath();
-  ctx.roundRect(10, 10, 492, 236, 22);
+  ctx.roundRect(10, 10, canvasWidth - 20, totalCanvasHeight - 20, 20);
   ctx.fill();
   ctx.lineWidth = 3;
   ctx.strokeStyle = '#06b6d4';
@@ -4336,73 +4432,74 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
 
   // Header Title
   ctx.fillStyle = '#38bdf8';
-  ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, sans-serif';
-  const cleanTitle = (title || 'SPLATRIS WEBXR').slice(0, 30);
-  ctx.fillText(cleanTitle, 32, 48);
+  ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  const cleanTitle = (title || 'SPLATRIS WEBXR').slice(0, 36);
+  ctx.fillText(cleanTitle, paddingX, 48);
 
   // Status green pulse dot
   ctx.fillStyle = '#10b981';
   ctx.beginPath();
-  ctx.arc(460, 40, 8, 0, Math.PI * 2);
+  ctx.arc(canvasWidth - 44, 42, 8, 0, Math.PI * 2);
   ctx.fill();
 
   // Subtitle / category
   if (subtitle) {
     ctx.fillStyle = '#06b6d4';
-    ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, sans-serif';
-    ctx.fillText(subtitle.slice(0, 48), 32, 78);
+    ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(subtitle.slice(0, 60), paddingX, 78);
   }
 
-  // Status / summary description
+  // Body text lines
   ctx.fillStyle = '#e2e8f0';
-  ctx.font = '15px -apple-system, BlinkMacSystemFont, sans-serif';
-  if (status) {
-    const words = status.split(' ');
-    let line1 = '';
-    let line2 = '';
-    for (const w of words) {
-      if ((line1 + w).length < 42 && !line2) {
-        line1 += w + ' ';
-      } else if ((line2 + w).length < 42) {
-        line2 += w + ' ';
-      }
-    }
-    ctx.fillText(line1.trim(), 32, subtitle ? 106 : 94);
-    if (line2) ctx.fillText(line2.trim() + (words.length > 18 ? '...' : ''), 32, subtitle ? 132 : 120);
-  } else {
-    ctx.fillText('🕹️ Left Stick: Move & Glide into Tank', 32, 92);
-    ctx.fillText('🔄 Right Stick: Turn & Fly Up / Down', 32, 126);
-    ctx.fillText('🎯 Trigger: Inspect Details / Spatial Q&A', 32, 160);
+  ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  let curY = topHeaderHeight + 14;
+  for (const line of lines) {
+    ctx.fillText(line, paddingX, curY);
+    curY += lineHeight;
   }
 
-  // Exit Button Badge
-  ctx.fillStyle = 'rgba(239, 68, 68, 0.32)';
+  // Exit Button Badge at bottom
+  const btnY = totalCanvasHeight - 64;
+  ctx.fillStyle = 'rgba(239, 68, 68, 0.28)';
   ctx.beginPath();
-  ctx.roundRect(32, 180, 448, 48, 12);
+  ctx.roundRect(paddingX, btnY, canvasWidth - (paddingX * 2), 44, 12);
   ctx.fill();
   ctx.lineWidth = 2;
   ctx.strokeStyle = '#ef4444';
   ctx.stroke();
 
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 17px -apple-system, BlinkMacSystemFont, sans-serif';
+  ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('🚪 Click or Press [ B / Y ] to Exit to Browser', 256, 211);
+  ctx.fillText('🚪 Click or Press [ B / Y ] to Exit WebXR', canvasWidth / 2, btnY + 28);
   ctx.textAlign = 'left';
 
+  // Dynamic PlaneGeometry resizing to match calculated aspect ratio exactly
+  const planeWidth = 0.88;
+  const planeHeight = (totalCanvasHeight / canvasWidth) * planeWidth;
+  if (xrHudMesh.geometry) {
+    xrHudMesh.geometry.dispose();
+  }
+  xrHudMesh.geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
   xrHudTexture.needsUpdate = true;
 }
 
 function checkXRExitButtonHit(origin, direction) {
   if (!renderer.xr.isPresenting || !xrHudMesh || !xrHudMesh.visible) return false;
+  xrHudMesh.updateMatrixWorld(true);
   const threeRaycaster = new THREE.Raycaster(origin, direction, 0.05, 10.0);
   const hits = threeRaycaster.intersectObject(xrHudMesh);
   if (hits.length > 0) {
-    console.log('[Splatris] In-VR Exit HUD clicked: Ending WebXR session...');
-    const session = renderer.xr.getSession();
-    if (session) {
-      session.end();
-      return true;
+    const uv = hits[0].uv;
+    // In Three.js plane UVs, y goes from 0 at the bottom to 1 at the top.
+    // The exit button is at the bottom of the card (uv.y < 0.28).
+    if (uv && uv.y < 0.28) {
+      console.log(`[Splatris] In-VR Exit HUD clicked (uv.y=${uv.y.toFixed(2)}): Ending WebXR session...`);
+      const session = renderer.xr.getSession();
+      if (session) {
+        session.end();
+        return true;
+      }
     }
   }
   return false;
