@@ -182,8 +182,21 @@ if ('xr' in navigator) {
   controller0.add(new THREE.Line(rayGeo, rayMat));
   controller1.add(new THREE.Line(rayGeo, rayMat));
 
+  const onXRSelectStart = (e) => {
+    if (typeof THREE !== 'undefined' && THREE.AudioContext && THREE.AudioContext.getContext) {
+      if (THREE.AudioContext.getContext().state === 'suspended') {
+        THREE.AudioContext.getContext().resume().catch(() => {});
+      }
+    }
+  };
+
   const onXRSelect = (e) => {
-    // Explicitly resume audio context inside VR session to satisfy browser autoplay policy
+    // Explicitly resume audio context inside VR session to guarantee the context remains active
+    if (typeof THREE !== 'undefined' && THREE.AudioContext && THREE.AudioContext.getContext) {
+      if (THREE.AudioContext.getContext().state === 'suspended') {
+        THREE.AudioContext.getContext().resume().catch(() => {});
+      }
+    }
     initSpatialAudio();
     if (threeAudioListener && threeAudioListener.context && threeAudioListener.context.state === 'suspended') {
       threeAudioListener.context.resume().catch((err) => console.warn('[WebXR] Audio resume error:', err));
@@ -215,6 +228,8 @@ if ('xr' in navigator) {
       performRaycastSelectionXR(origin, direction);
     }
   };
+  controller0.addEventListener('selectstart', onXRSelectStart);
+  controller1.addEventListener('selectstart', onXRSelectStart);
   controller0.addEventListener('select', onXRSelect);
   controller1.addEventListener('select', onXRSelect);
 }
@@ -1232,11 +1247,11 @@ function animate() {
         if (STATE.dropInViewer.splatMesh) STATE.dropInViewer.splatMesh.frustumCulled = false;
       }
 
-      // Ensure Head-locked HUD remains attached to camera at top-left FOV
+      // Ensure Head-locked HUD remains attached to camera at comfortable viewing position
       if (xrHudMesh && xrHudMesh.visible && xrHudMesh.parent !== camera) {
         camera.add(xrHudMesh);
-        xrHudMesh.position.set(-0.5, 0.3, -1.5);
-        xrHudMesh.rotation.set(-0.06, 0.22, 0);
+        xrHudMesh.position.set(-0.2, 0.0, -0.6);
+        xrHudMesh.rotation.set(-0.02, 0.12, 0);
       }
 
       // 2. Increase Camera Far Plane to 1000.0 so environment never clips out during room-scale walk
@@ -3260,6 +3275,24 @@ if (btnWebXR) {
   btnWebXR.addEventListener('click', async (e) => {
     if (e && e.preventDefault) e.preventDefault();
 
+    // 1. Unlock Web Audio API directly on DOM user gesture before XR session takes over
+    if (typeof THREE !== 'undefined' && THREE.AudioContext && THREE.AudioContext.getContext) {
+      const xrAudioContext = THREE.AudioContext.getContext();
+      if (xrAudioContext && xrAudioContext.state === 'suspended') {
+        xrAudioContext.resume().catch(() => {});
+      }
+    }
+    // 2. Unlock Speech Synthesis with a silent utterance directly on DOM user gesture
+    if ('speechSynthesis' in window) {
+      try {
+        const unlockSpeech = new SpeechSynthesisUtterance('');
+        unlockSpeech.volume = 0;
+        window.speechSynthesis.speak(unlockSpeech);
+      } catch (speechErr) {
+        console.warn('[WebXR] SpeechSynthesis DOM pre-warm note:', speechErr);
+      }
+    }
+
     // Prevent rapid double-tap concurrency in Quest browser
     if (isRequestingXRSession) {
       console.log('[WebXR] Session request already in flight. Ignoring duplicate tap.');
@@ -3372,17 +3405,17 @@ if (btnWebXR) {
         }
         cameraRig.rotation.set(0, 0, 0);
 
-        // Display in-VR head-locked floating HUD card (attached to camera at top-left FOV)
+        // Display in-VR head-locked floating HUD card (attached to camera at comfortable viewing position)
         createXRInWorldHUD();
         if (xrHudMesh) {
           if (xrHudMesh.parent) {
             xrHudMesh.parent.remove(xrHudMesh);
           }
           camera.add(xrHudMesh);
-          xrHudMesh.position.set(-0.5, 0.3, -1.5);
-          xrHudMesh.rotation.set(-0.06, 0.22, 0);
+          xrHudMesh.position.set(-0.2, 0.0, -0.6);
+          xrHudMesh.rotation.set(-0.02, 0.12, 0);
           xrHudMesh.visible = true;
-          console.log('[WebXR] Head-locked HUD attached to camera at (-0.5, 0.3, -1.5)');
+          console.log('[WebXR] Head-locked HUD attached to camera at (-0.2, 0.0, -0.6)');
         }
 
         // Attach THREE.AudioListener to the active XR camera so spatial audio doesn't drop to 0 when walking
@@ -4391,7 +4424,7 @@ function createXRInWorldHUD() {
   xrHudTexture.magFilter = THREE.LinearFilter;
   xrHudTexture.needsUpdate = true;
 
-  const hudGeo = new THREE.PlaneGeometry(0.88, 0.41);
+  const hudGeo = new THREE.PlaneGeometry(0.52, 0.24);
   const hudMat = new THREE.MeshBasicMaterial({
     map: xrHudTexture,
     transparent: true,
@@ -4509,7 +4542,7 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
   ctx.textAlign = 'left';
 
   // Dynamic PlaneGeometry resizing to match calculated aspect ratio exactly
-  const planeWidth = 0.88;
+  const planeWidth = 0.52;
   const planeHeight = (totalCanvasHeight / canvasWidth) * planeWidth;
   if (xrHudMesh.geometry) {
     xrHudMesh.geometry.dispose();
