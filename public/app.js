@@ -1247,11 +1247,22 @@ function animate() {
         if (STATE.dropInViewer.splatMesh) STATE.dropInViewer.splatMesh.frustumCulled = false;
       }
 
-      // Ensure Head-locked HUD remains attached to camera at comfortable viewing position
-      if (xrHudMesh && xrHudMesh.visible && xrHudMesh.parent !== camera) {
-        camera.add(xrHudMesh);
-        xrHudMesh.position.set(-0.2, 0.0, -0.6);
-        xrHudMesh.rotation.set(-0.02, 0.12, 0);
+      // "World Space + Render Loop" HUD Update (The Chase Method)
+      if (xrHudMesh && xrHudMesh.visible) {
+        if (xrHudMesh.parent !== scene) {
+          if (xrHudMesh.parent) xrHudMesh.parent.remove(xrHudMesh);
+          scene.add(xrHudMesh);
+        }
+        const xrCamera = renderer.xr.getCamera(camera);
+        const camPos = new THREE.Vector3();
+        const camQuat = new THREE.Quaternion();
+        xrCamera.getWorldPosition(camPos);
+        xrCamera.getWorldQuaternion(camQuat);
+
+        const offset = new THREE.Vector3(-0.3, 0.0, -0.8);
+        offset.applyQuaternion(camQuat);
+        xrHudMesh.position.copy(camPos).add(offset);
+        xrHudMesh.quaternion.copy(camQuat);
       }
 
       // 2. Increase Camera Far Plane to 1000.0 so environment never clips out during room-scale walk
@@ -3405,17 +3416,25 @@ if (btnWebXR) {
         }
         cameraRig.rotation.set(0, 0, 0);
 
-        // Display in-VR head-locked floating HUD card (attached to camera at comfortable viewing position)
+        // Display in-VR world-space floating HUD card (The Chase Method)
         createXRInWorldHUD();
         if (xrHudMesh) {
-          if (xrHudMesh.parent) {
-            xrHudMesh.parent.remove(xrHudMesh);
+          if (xrHudMesh.parent !== scene) {
+            if (xrHudMesh.parent) xrHudMesh.parent.remove(xrHudMesh);
+            scene.add(xrHudMesh);
           }
-          camera.add(xrHudMesh);
-          xrHudMesh.position.set(-0.2, 0.0, -0.6);
-          xrHudMesh.rotation.set(-0.02, 0.12, 0);
+          const xrCamera = renderer.xr.getCamera(camera);
+          const camPos = new THREE.Vector3();
+          const camQuat = new THREE.Quaternion();
+          xrCamera.getWorldPosition(camPos);
+          xrCamera.getWorldQuaternion(camQuat);
+
+          const offset = new THREE.Vector3(-0.3, 0.0, -0.8);
+          offset.applyQuaternion(camQuat);
+          xrHudMesh.position.copy(camPos).add(offset);
+          xrHudMesh.quaternion.copy(camQuat);
           xrHudMesh.visible = true;
-          console.log('[WebXR] Head-locked HUD attached to camera at (-0.2, 0.0, -0.6)');
+          console.log('[WebXR] In-world HUD chase initialized in scene at offset (-0.3, 0.0, -0.8)');
         }
 
         // Attach THREE.AudioListener to the active XR camera so spatial audio doesn't drop to 0 when walking
@@ -3950,6 +3969,9 @@ function splitTextIntoSentences(text) {
   return finalChunks.filter((s) => s.length > 0);
 }
 
+let ttsPlaybackStarted = false;
+let ttsBlockedWatchdog = null;
+
 /**
  * Stops ongoing spatial speech and resets sentence queue & visual emitter.
  */
@@ -3960,6 +3982,10 @@ function stopSpatialAudio() {
   if (ttsHeartbeatTimer) {
     clearInterval(ttsHeartbeatTimer);
     ttsHeartbeatTimer = null;
+  }
+  if (ttsBlockedWatchdog) {
+    clearTimeout(ttsBlockedWatchdog);
+    ttsBlockedWatchdog = null;
   }
   if (activeSpatialAudioSource) {
     try {
@@ -4017,6 +4043,11 @@ function playNextTtsSentenceInQueue() {
     activeUtterance = utterance;
 
     utterance.onstart = () => {
+      ttsPlaybackStarted = true;
+      if (ttsBlockedWatchdog) {
+        clearTimeout(ttsBlockedWatchdog);
+        ttsBlockedWatchdog = null;
+      }
       if (waveAnim) waveAnim.classList.add('active');
     };
 
@@ -4029,10 +4060,10 @@ function playNextTtsSentenceInQueue() {
 
     utterance.onerror = (event) => {
       console.warn(`[SpatialTTS] Sentence ${ttsCurrentSentenceIndex + 1} playback notice:`, event?.error);
-      if (!ttsPlaybackActive) return;
-      if (event?.error === 'interrupted' || event?.error === 'canceled') {
-        return;
+      if (event?.error && event.error !== 'interrupted' && event.error !== 'canceled') {
+        prependAudioBlockedToHud();
       }
+      if (!ttsPlaybackActive) return;
       ttsCurrentSentenceIndex++;
       playNextTtsSentenceInQueue();
     };
@@ -4045,6 +4076,7 @@ function playNextTtsSentenceInQueue() {
     window.speechSynthesis.speak(utterance);
   } catch (err) {
     console.warn('[SpatialTTS] Error synthesizing sentence:', err);
+    prependAudioBlockedToHud();
     ttsCurrentSentenceIndex++;
     playNextTtsSentenceInQueue();
   }
@@ -4080,6 +4112,7 @@ async function speakSpatialAudio(text, position, onComplete) {
 
   if (!('speechSynthesis' in window)) {
     console.warn('[SpatialTTS] SpeechSynthesis API unavailable in this browser.');
+    prependAudioBlockedToHud();
     if (typeof onComplete === 'function') onComplete();
     return;
   }
@@ -4088,6 +4121,16 @@ async function speakSpatialAudio(text, position, onComplete) {
   ttsCurrentSentenceIndex = 0;
   ttsPlaybackActive = true;
   ttsActiveFinishCallback = onComplete;
+
+  // 4. Audio Fallback Watchdog: If browser blocks window.speechSynthesis inside WebXR
+  ttsPlaybackStarted = false;
+  if (ttsBlockedWatchdog) clearTimeout(ttsBlockedWatchdog);
+  ttsBlockedWatchdog = setTimeout(() => {
+    if (ttsPlaybackActive && !ttsPlaybackStarted && (!window.speechSynthesis || !window.speechSynthesis.speaking)) {
+      console.warn('[SpatialTTS] Speech synthesis detected blocked by browser policy in WebXR.');
+      prependAudioBlockedToHud();
+    }
+  }, 2200);
 
   // 5. Chrome watchdog timer: prevents background suspension during long multi-sentence playback
   if (ttsHeartbeatTimer) clearInterval(ttsHeartbeatTimer);
@@ -4411,6 +4454,20 @@ function performRaycastSelection(mouseNdc, screenX, screenY) {
 let xrHudMesh = null;
 let xrHudCanvas = null;
 let xrHudTexture = null;
+let lastHudContent = { title: '', subtitle: '', status: '' };
+
+function prependAudioBlockedToHud() {
+  if (lastHudContent && lastHudContent.status) {
+    if (!lastHudContent.status.includes('[Audio Blocked]')) {
+      const blockedStatus = `[Audio Blocked] - Read text below:\n${lastHudContent.status}`;
+      updateXRHUDContent({
+        title: lastHudContent.title,
+        subtitle: lastHudContent.subtitle,
+        status: blockedStatus,
+      });
+    }
+  }
+}
 
 function createXRInWorldHUD() {
   if (xrHudMesh) return xrHudMesh;
@@ -4424,7 +4481,7 @@ function createXRInWorldHUD() {
   xrHudTexture.magFilter = THREE.LinearFilter;
   xrHudTexture.needsUpdate = true;
 
-  const hudGeo = new THREE.PlaneGeometry(0.52, 0.24);
+  const hudGeo = new THREE.PlaneGeometry(0.65, 0.3);
   const hudMat = new THREE.MeshBasicMaterial({
     map: xrHudTexture,
     transparent: true,
@@ -4434,15 +4491,16 @@ function createXRInWorldHUD() {
   });
   xrHudMesh = new THREE.Mesh(hudGeo, hudMat);
   xrHudMesh.name = 'xrHudMesh';
-  xrHudMesh.renderOrder = 9999;
+  xrHudMesh.renderOrder = 999;
   xrHudMesh.visible = false;
-  // NOTE: Head-locked HUD: attached directly to camera on WebXR presentation (not to scene)
+  scene.add(xrHudMesh);
 
   updateXRHUDContent();
   return xrHudMesh;
 }
 
 function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = '' } = {}) {
+  lastHudContent = { title, subtitle, status };
   if (!xrHudCanvas || !xrHudTexture || !xrHudMesh) return;
 
   const canvasWidth = 768;
@@ -4542,12 +4600,17 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
   ctx.textAlign = 'left';
 
   // Dynamic PlaneGeometry resizing to match calculated aspect ratio exactly
-  const planeWidth = 0.52;
+  const planeWidth = 0.65;
   const planeHeight = (totalCanvasHeight / canvasWidth) * planeWidth;
   if (xrHudMesh.geometry) {
     xrHudMesh.geometry.dispose();
   }
   xrHudMesh.geometry = new THREE.PlaneGeometry(planeWidth, planeHeight);
+  if (xrHudMesh.material) {
+    xrHudMesh.material.depthTest = false;
+    xrHudMesh.material.depthWrite = false;
+  }
+  xrHudMesh.renderOrder = 999;
   xrHudTexture.needsUpdate = true;
 }
 
@@ -4636,6 +4699,13 @@ function performRaycastSelectionXR(origin, direction) {
     hitPoint = origin.clone().addScaledVector(direction, 2.2);
   }
 
+  // 2. Immediate Raycast Visual Feedback:
+  updateXRHUDContent({
+    title: 'SCANNING OBJECT...',
+    subtitle: hitPoint ? `Target Hit [${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}]` : 'Raycast Registered',
+    status: 'Scanning object... Fetching data from Tavily.',
+  });
+
   triggerSpatialObjectInspection(hitPoint, null, null);
 }
 
@@ -4693,11 +4763,11 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
 
   showToast(`🎯 Object selected at (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}). Querying Vision RAG...`, 'info', 3000);
 
-  // In WebXR: Update floating in-world HUD to show active inspection
+  // In WebXR: Immediate visual feedback on HUD that raycast registered
   updateXRHUDContent({
-    title: 'PROCESSING...',
+    title: 'SCANNING OBJECT...',
     subtitle: `Point: (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)})`,
-    status: 'Identifying visual features via Nemotron Vision & Tavily...',
+    status: 'Scanning object... Fetching data from Tavily.',
   });
 
   // Automatically open RAG drawer if collapsed (desktop)
