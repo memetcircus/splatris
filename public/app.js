@@ -229,19 +229,23 @@ if ('xr' in navigator) {
       performRaycastSelectionXR(origin, direction);
     }
   };
-  const onXRSqueeze = (e) => {
-    isXrHudVisibleByUser = !isXrHudVisibleByUser;
+  let lastHudSqueezeTime = 0;
+  window.toggleXrHudVisibility = () => {
+    const now = Date.now();
+    if (now - lastHudSqueezeTime < 350) return;
+    lastHudSqueezeTime = now;
     if (xrHudMesh) {
-      xrHudMesh.visible = isXrHudVisibleByUser;
-      console.log(`[WebXR] HUD toggled via grip button: visible=${isXrHudVisibleByUser}`);
+      xrHudMesh.visible = !xrHudMesh.visible;
+      isXrHudVisibleByUser = xrHudMesh.visible;
+      console.log(`[WebXR] HUD toggled via grip button: visible=${xrHudMesh.visible}`);
     }
   };
   controller0.addEventListener('selectstart', onXRSelectStart);
   controller1.addEventListener('selectstart', onXRSelectStart);
   controller0.addEventListener('select', onXRSelect);
   controller1.addEventListener('select', onXRSelect);
-  controller0.addEventListener('squeeze', onXRSqueeze);
-  controller1.addEventListener('squeeze', onXRSqueeze);
+  controller0.addEventListener('squeeze', window.toggleXrHudVisibility);
+  controller1.addEventListener('squeeze', window.toggleXrHudVisibility);
 }
 
 // Camera Controls: OrbitControls (turntable) and TrackballControls (full 3-axis free rotation)
@@ -3448,6 +3452,12 @@ if (btnWebXR) {
           console.log('[WebXR] In-world HUD chase initialized in scene at offset (0.0, -0.1, -0.6)');
         }
 
+        session.addEventListener('squeeze', () => {
+          if (typeof window.toggleXrHudVisibility === 'function') {
+            window.toggleXrHudVisibility();
+          }
+        });
+
         // Attach THREE.AudioListener to the active XR camera so spatial audio doesn't drop to 0 when walking
         initSpatialAudio();
         if (threeAudioListener) {
@@ -4213,104 +4223,18 @@ function updateChatMessage(id, text, sources = [], grounding = '') {
  * @returns {string|null} Base64 data URL (image/jpeg) or null
  */
 function takeScreenshot({ targetPoint = null, crop = false, screenX = null, screenY = null, boxSize = 540 } = {}) {
+  const wasReticleVisible = raycastTargetMesh ? raycastTargetMesh.visible : false;
+  const wasHudVisible = xrHudMesh ? xrHudMesh.visible : false;
   try {
     const canvasEl = renderer?.domElement || document.getElementById('webgl-canvas');
     if (!canvasEl) return null;
 
-    // Temporarily hide 3D reticle marker and XR HUD so they do not occlude the target object
-    const wasReticleVisible = raycastTargetMesh ? raycastTargetMesh.visible : false;
+    // 1. Temporarily hide HUD & reticle
     if (raycastTargetMesh) raycastTargetMesh.visible = false;
-    const wasHudVisible = xrHudMesh ? xrHudMesh.visible : false;
-    if (xrHudMesh) {
-      xrHudMesh.visible = false;
-      if (xrHudMesh.parent) {
-        xrHudMesh.parent.remove(xrHudMesh);
-      }
-    }
+    if (xrHudMesh) xrHudMesh.visible = false;
 
+    // 2. Force synchronous render frame WITHOUT HUD
     const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
-
-    // PATH A: Targeted 3D Object Centered Snapshot (Guaranteed center + wide context window)
-    if (targetPoint) {
-      const renderSize = 768;
-      const snapTarget = new THREE.WebGLRenderTarget(renderSize, renderSize, {
-        format: THREE.RGBAFormat,
-        type: THREE.UnsignedByteType,
-      });
-
-      // Compute viewer eye position in world space
-      const eyePos = new THREE.Vector3();
-      activeCam.getWorldPosition(eyePos);
-
-      // Direction vector from targetPoint to user eye
-      let viewDir = eyePos.clone().sub(targetPoint);
-      let dist = viewDir.length();
-      if (dist < 0.1) {
-        viewDir.set(0, 0.4, 1.0);
-        dist = 2.2;
-      } else {
-        viewDir.normalize();
-      }
-
-      // Optimal framing distance to capture the entire object silhouette with ample context padding
-      const captureDist = Math.max(1.8, Math.min(3.2, dist));
-      const snapCamPos = targetPoint.clone().addScaledVector(viewDir, captureDist);
-
-      const snapCam = new THREE.PerspectiveCamera(52, 1.0, 0.05, 50.0);
-      snapCam.position.copy(snapCamPos);
-      snapCam.lookAt(targetPoint); // Mathematically locks targetPoint dead center (0,0) in viewport!
-      snapCam.updateMatrixWorld(true);
-      snapCam.updateProjectionMatrix();
-
-      const prevRenderTarget = renderer.getRenderTarget();
-      const prevXrEnabled = renderer.xr.enabled;
-
-      // Temporarily disable XR projection override during off-screen render pass
-      renderer.xr.enabled = false;
-      renderer.setRenderTarget(snapTarget);
-      renderer.clear();
-
-      if (STATE.dropInViewer && STATE.dropInViewer.viewer) {
-        try {
-          STATE.dropInViewer.viewer.update(renderer, snapCam);
-        } catch (e) {}
-      }
-      renderer.render(scene, snapCam);
-
-      // Read rendered pixels
-      const pixelBuffer = new Uint8Array(renderSize * renderSize * 4);
-      renderer.readRenderTargetPixels(snapTarget, 0, 0, renderSize, renderSize, pixelBuffer);
-
-      // Restore renderer states
-      renderer.setRenderTarget(prevRenderTarget);
-      renderer.xr.enabled = prevXrEnabled;
-      snapTarget.dispose();
-
-      // Restore reticle & HUD (respecting user grip toggle state)
-      if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
-      if (xrHudMesh) {
-        if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
-        xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
-      }
-
-      // Transfer to 2D canvas and flip Y (WebGL bottom-up to canvas top-down)
-      const snapCanvas = document.createElement('canvas');
-      snapCanvas.width = renderSize;
-      snapCanvas.height = renderSize;
-      const ctx = snapCanvas.getContext('2d');
-      const imgData = ctx.createImageData(renderSize, renderSize);
-
-      for (let y = 0; y < renderSize; y++) {
-        const srcRow = (renderSize - 1 - y) * renderSize * 4;
-        const dstRow = y * renderSize * 4;
-        imgData.data.set(pixelBuffer.subarray(srcRow, srcRow + renderSize * 4), dstRow);
-      }
-      ctx.putImageData(imgData, 0, 0);
-
-      return snapCanvas.toDataURL('image/jpeg', 0.90);
-    }
-
-    // PATH B: Screen space or full viewport capture
     if (STATE.dropInViewer && STATE.dropInViewer.viewer) {
       try {
         STATE.dropInViewer.viewer.update(renderer, activeCam);
@@ -4318,53 +4242,22 @@ function takeScreenshot({ targetPoint = null, crop = false, screenX = null, scre
     }
     renderer.render(scene, activeCam);
 
+    // 3. Extract snapshot data immediately while buffer is valid
     let dataUrl = null;
-    if (!crop) {
-      dataUrl = canvasEl.toDataURL('image/jpeg', 0.90);
-    } else {
-      const rect = canvasEl.getBoundingClientRect();
-      const scaleX = canvasEl.width / (rect.width || 1);
-      const scaleY = canvasEl.height / (rect.height || 1);
-
-      const actualX = screenX != null ? screenX : (rect.width / 2);
-      const actualY = screenY != null ? screenY : (rect.height / 2);
-
-      const centerPixelX = Math.round(actualX * scaleX);
-      const centerPixelY = Math.round(actualY * scaleY);
-
-      const targetCropSize = Math.round(boxSize * Math.min(scaleX, scaleY));
-      const cropSize = Math.max(320, Math.min(targetCropSize, canvasEl.width, canvasEl.height));
-
-      const halfCrop = Math.floor(cropSize / 2);
-      let srcX = Math.max(0, Math.min(canvasEl.width - cropSize, centerPixelX - halfCrop));
-      let srcY = Math.max(0, Math.min(canvasEl.height - cropSize, centerPixelY - halfCrop));
-
-      const cropCanvas = document.createElement('canvas');
-      cropCanvas.width = cropSize;
-      cropCanvas.height = cropSize;
-      const ctx = cropCanvas.getContext('2d');
-      if (ctx) {
-        ctx.fillStyle = '#07090e';
-        ctx.fillRect(0, 0, cropSize, cropSize);
-        ctx.drawImage(canvasEl, srcX, srcY, cropSize, cropSize, 0, 0, cropSize, cropSize);
-        dataUrl = cropCanvas.toDataURL('image/jpeg', 0.90);
-      }
+    try {
+      dataUrl = canvasEl.toDataURL('image/jpeg', 0.85);
+    } catch (e) {
+      console.warn('[SpatialRaycast] canvas.toDataURL error:', e);
     }
 
-    // Restore reticle visibility and HUD
+    // 4. Restore HUD immediately
     if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
-    if (xrHudMesh) {
-      if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
-      xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
-    }
+    if (xrHudMesh) xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
 
     return dataUrl;
   } catch (err) {
     if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
-    if (xrHudMesh) {
-      if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
-      xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
-    }
+    if (xrHudMesh) xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
     console.warn('[SpatialRaycast] takeScreenshot error:', err);
     return null;
   }
@@ -4834,30 +4727,39 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
       imageBase64,
     };
 
+    const fetchController = new AbortController();
+    const fetchTimer = setTimeout(() => {
+      try { fetchController.abort(); } catch (e) {}
+    }, 15000);
+
     const res = await safeFetchJson('/api/spatial/raycast-object', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
+      signal: fetchController.signal,
+    }).catch((fetchErr) => {
+      console.warn('[SpatialRaycast] safeFetchJson rejected:', fetchErr);
+      return { success: false, error: fetchErr.message || 'Network request failed' };
+    }).finally(() => {
+      clearTimeout(fetchTimer);
     });
 
-    if (!res.success) {
-      throw new Error(res.error || 'Failed to inspect object');
+    if (!res || !res.success || !res.objectName || res.objectName.trim().length === 0) {
+      throw new Error((res && res.error) || 'Could not identify object.');
     }
 
     const objectName = (res.objectName || '').trim();
     const isUnidentified = !objectName || objectName.toLowerCase() === 'unknown object' || (typeof res.confidence === 'number' && res.confidence < 0.35);
 
     if (isUnidentified) {
-      const fallbackMsg = "I couldn't identify this object. Please try clicking closer or from another angle.";
+      const fallbackMsg = 'Error: Could not identify object.';
       updateXRHUDContent({
-        title: 'OBJECT NOT IDENTIFIED',
-        subtitle: 'Low confidence detection',
-        status: fallbackMsg,
+        title: 'ERROR',
+        subtitle: 'Could not identify object',
+        status: 'Error: Could not identify object.',
       });
-      updateChatMessage(typingId, `⚠️ ${fallbackMsg}`, []);
-      speakSpatialAudio(fallbackMsg, hitPoint, () => {
-        unlockRaycastQuery();
-      });
+      updateChatMessage(typingId, '⚠️ Error: Could not identify object.', []);
+      unlockRaycastQuery();
       return;
     }
 
@@ -4900,16 +4802,13 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
     }
   } catch (err) {
     console.error('Raycast inspection error:', err);
-    const fallbackMsg = "I couldn't identify this object. Please try clicking again.";
     updateChatMessage(typingId, `Target inspection error: ${err.message}`, []);
     updateXRHUDContent({
-      title: 'INSPECTION ERROR',
-      subtitle: 'Target inspection failed',
-      status: fallbackMsg,
+      title: 'ERROR',
+      subtitle: 'Could not identify object',
+      status: 'Error: Could not identify object.',
     });
-    speakSpatialAudio(fallbackMsg, hitPoint, () => {
-      unlockRaycastQuery();
-    });
+    unlockRaycastQuery();
   }
 }
 
