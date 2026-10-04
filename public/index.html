@@ -86,19 +86,14 @@
           <line x1="15" y1="3" x2="15" y2="21"></line>
         </svg>
       </button>
-      <div class="webxr-onboarding-wrapper" style="display: flex; align-items: center; gap: 10px;">
-        <div id="vr-controls-guide-banner" class="vr-controls-banner">
-          🎮 <strong>VR Controls:</strong> Press <strong class="key-highlight">GRIP</strong> (side button) to hide/show panel. Pull <strong class="key-highlight">TRIGGER</strong> to scan objects.
-        </div>
-        <button id="btn-webxr" class="btn-secondary vr-button" title="Enter WebXR Immersive Session on Meta Quest / Headset">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"></path>
-            <circle cx="9" cy="12" r="2"></circle>
-            <circle cx="15" cy="12" r="2"></circle>
-          </svg>
-          <span>Enter WebXR</span>
-        </button>
-      </div>
+      <button id="btn-webxr" class="btn-secondary vr-button" title="Enter WebXR Immersive Session on Meta Quest / Headset">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"></path>
+          <circle cx="9" cy="12" r="2"></circle>
+          <circle cx="15" cy="12" r="2"></circle>
+        </svg>
+        <span>Enter WebXR</span>
+      </button>
     </div>
   </header>
 
@@ -446,6 +441,11 @@
         </div>
         <h2>Spatial Audio RAG</h2>
         <span class="badge ai">Tavily + Nemotron</span>
+        <button id="btn-collapse-right-panel" class="btn-panel-corner-toggle" title="Collapse Spatial Audio RAG" aria-label="Collapse Spatial Audio RAG">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+        </button>
       </div>
 
       <div class="panel-body">
@@ -502,6 +502,14 @@
         </form>
       </div>
     </aside>
+
+    <!-- Floating Expand Button for Right Panel when collapsed -->
+    <button id="btn-expand-right-panel" class="floating-panel-expand-btn right-floating-btn" title="Expand Spatial Audio RAG" aria-label="Expand Spatial Audio RAG">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+      <span class="floating-btn-text">Spatial Audio RAG</span>
+    </button>
   </main>
 
   <!-- Pre-Flight AI Video Quality Audit Modal -->

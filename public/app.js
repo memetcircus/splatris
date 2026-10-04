@@ -1577,8 +1577,26 @@ function showToast(message, type = 'info', durationMs = 4500) {
 // --- Collapsible Left & Right Panels (Immersive Viewport Mode) ---
 const btnToggleLeft = document.getElementById('btn-toggle-left-panel');
 const btnToggleRight = document.getElementById('btn-toggle-right-panel');
+const btnCollapseRight = document.getElementById('btn-collapse-right-panel');
+const btnExpandRight = document.getElementById('btn-expand-right-panel');
 const leftPanel = document.getElementById('left-panel');
 const rightPanel = document.getElementById('right-panel');
+
+function setRightPanelCollapsed(collapsed) {
+  if (!rightPanel) return;
+  rightPanel.classList.toggle('collapsed', collapsed);
+  if (btnToggleRight) {
+    btnToggleRight.classList.toggle('active', !collapsed);
+    btnToggleRight.setAttribute('title', collapsed ? 'Expand Spatial Audio RAG (Right Panel)' : 'Collapse Spatial Audio RAG (Right Panel)');
+  }
+  if (btnExpandRight) {
+    btnExpandRight.classList.toggle('visible', collapsed);
+  }
+  if (typeof onWindowResize === 'function') {
+    onWindowResize();
+  }
+}
+window.setRightPanelCollapsed = setRightPanelCollapsed;
 
 if (leftPanel) {
   leftPanel.addEventListener('transitionend', () => onWindowResize());
@@ -1598,11 +1616,34 @@ if (btnToggleLeft && leftPanel) {
 
 if (btnToggleRight && rightPanel) {
   btnToggleRight.addEventListener('click', () => {
-    const isCollapsed = rightPanel.classList.toggle('collapsed');
-    btnToggleRight.classList.toggle('active', !isCollapsed);
-    btnToggleRight.setAttribute('title', isCollapsed ? 'Expand Spatial Audio RAG (Right Panel)' : 'Collapse Spatial Audio RAG (Right Panel)');
-    onWindowResize();
+    const isCollapsed = !rightPanel.classList.contains('collapsed');
+    setRightPanelCollapsed(isCollapsed);
   });
+}
+
+if (btnCollapseRight && rightPanel) {
+  btnCollapseRight.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setRightPanelCollapsed(true);
+  });
+}
+
+if (btnExpandRight && rightPanel) {
+  btnExpandRight.addEventListener('click', (e) => {
+    e.stopPropagation();
+    setRightPanelCollapsed(false);
+  });
+}
+
+// Ensure initial state matches panel class
+if (rightPanel) {
+  const initiallyCollapsed = rightPanel.classList.contains('collapsed');
+  if (btnExpandRight) {
+    btnExpandRight.classList.toggle('visible', initiallyCollapsed);
+  }
+  if (btnToggleRight) {
+    btnToggleRight.classList.toggle('active', !initiallyCollapsed);
+  }
 }
 
 // --- Step Tracker UI Helper ---
@@ -4701,12 +4742,8 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
   });
 
   // Automatically open RAG drawer if collapsed (desktop)
-  const rightPanel = document.getElementById('right-panel');
-  if (rightPanel && rightPanel.classList.contains('collapsed')) {
-    rightPanel.classList.remove('collapsed');
-    const toggleBtn = document.getElementById('btn-toggle-right-panel');
-    if (toggleBtn) toggleBtn.classList.add('active');
-    if (typeof onWindowResize === 'function') onWindowResize();
+  if (typeof setRightPanelCollapsed === 'function') {
+    setRightPanelCollapsed(false);
   }
 
   // Post user query in chat
@@ -4839,12 +4876,8 @@ function renderRaycastResult(id, result) {
   }
 
   // Ensure right panel is visible
-  const rightPanel = document.getElementById('right-panel');
-  if (rightPanel && rightPanel.classList.contains('collapsed')) {
-    rightPanel.classList.remove('collapsed');
-    const toggleBtn = document.getElementById('btn-toggle-right-panel');
-    if (toggleBtn) toggleBtn.classList.add('active');
-    if (typeof onWindowResize === 'function') onWindowResize();
+  if (typeof setRightPanelCollapsed === 'function') {
+    setRightPanelCollapsed(false);
   }
 
   contentEl.innerHTML = `
