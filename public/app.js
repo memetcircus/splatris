@@ -3682,9 +3682,8 @@ if (btnToggleAudio) {
   btnToggleAudio.addEventListener('click', () => {
     STATE.audioEnabled = !STATE.audioEnabled;
     btnToggleAudio.style.opacity = STATE.audioEnabled ? '1' : '0.4';
-    if (!STATE.audioEnabled && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      waveAnim.classList.remove('active');
+    if (!STATE.audioEnabled) {
+      stopSpatialAudio();
     }
   });
 }
@@ -3762,37 +3761,88 @@ async function submitRagQuery(query) {
 }
 
 let activeSpatialAudioSource = null;
+let activeUtterance = null; // CRITICAL: Retain global reference to prevent V8 garbage collection mid-playback
+let ttsSentenceQueue = [];
+let ttsCurrentSentenceIndex = 0;
+let ttsPlaybackActive = false;
+let ttsActiveFinishCallback = null;
+let ttsHeartbeatTimer = null;
 
-async function speakSpatialAudio(text, position, onComplete) {
-  let callbackInvoked = false;
-  const finishCallback = () => {
-    if (!callbackInvoked) {
-      callbackInvoked = true;
-      if (typeof onComplete === 'function') {
-        try {
-          onComplete();
-        } catch (cbErr) {
-          console.warn('[SpatialTTS] onComplete callback error:', cbErr);
+/**
+ * Splits incoming text into an array of clean, digestible sentence chunks for TTS.
+ * Bypasses browser character and ~15s timeout limits.
+ */
+function splitTextIntoSentences(text) {
+  if (!text) return [];
+  // Strip markdown formatting, URLs, and normalize whitespace
+  const clean = text
+    .replace(/[*_#`~[\]()]/g, ' ')
+    .replace(/https?:\/\/\S+/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!clean) return [];
+
+  let rawSentences = [];
+  // Match sentences ending in ., !, or ? (preserving punctuation)
+  const matches = clean.match(/[^.!?]+[.!?]+(?:\s+|$)/g);
+  if (matches && matches.length > 0) {
+    rawSentences = matches.map((s) => s.trim()).filter(Boolean);
+    const matchedLen = matches.join('').length;
+    if (matchedLen < clean.length) {
+      const remainder = clean.slice(matchedLen).trim();
+      if (remainder) rawSentences.push(remainder);
+    }
+  } else {
+    rawSentences = clean.split(/(?<=[.!?])\s+/).map((s) => s.trim()).filter(Boolean);
+    if (rawSentences.length === 0) rawSentences = [clean];
+  }
+
+  // Ensure no single sentence chunk exceeds 180 chars to prevent browser engine speech stalls
+  const finalChunks = [];
+  for (const s of rawSentences) {
+    if (s.length <= 180) {
+      finalChunks.push(s);
+    } else {
+      const subMatches = s.match(/[^,;]+[,;]+(?:\s+|$)/g);
+      if (subMatches && subMatches.length > 0) {
+        subMatches.forEach((p) => {
+          const t = p.trim();
+          if (t) finalChunks.push(t);
+        });
+        const subMatchedLen = subMatches.join('').length;
+        if (subMatchedLen < s.length) {
+          const remainder = s.slice(subMatchedLen).trim();
+          if (remainder) finalChunks.push(remainder);
         }
+      } else {
+        const words = s.split(' ');
+        let cur = '';
+        for (const w of words) {
+          if ((cur + ' ' + w).length > 140 && cur) {
+            finalChunks.push(cur.trim());
+            cur = w;
+          } else {
+            cur = cur ? cur + ' ' + w : w;
+          }
+        }
+        if (cur.trim()) finalChunks.push(cur.trim());
       }
     }
-  };
-
-  if (!text) {
-    finishCallback();
-    return;
   }
-  initSpatialAudio();
+  return finalChunks.filter((s) => s.length > 0);
+}
 
-  // 1. Position spatial 3D audio panner & visual emitter at the target object coordinates
-  if (position && typeof position.x === 'number') {
-    updateSpatialEmitterPosition(position.x, position.y, position.z);
+/**
+ * Stops ongoing spatial speech and resets sentence queue & visual emitter.
+ */
+function stopSpatialAudio() {
+  ttsPlaybackActive = false;
+  ttsSentenceQueue = [];
+  ttsCurrentSentenceIndex = 0;
+  if (ttsHeartbeatTimer) {
+    clearInterval(ttsHeartbeatTimer);
+    ttsHeartbeatTimer = null;
   }
-
-  // 2. Play acoustic beacon feedback chime emanating directly from the object
-  triggerSpatialChime(560, 0.3);
-
-  // Stop any ongoing spatial or synthesized speech
   if (activeSpatialAudioSource) {
     try {
       activeSpatialAudioSource.stop();
@@ -3801,79 +3851,137 @@ async function speakSpatialAudio(text, position, onComplete) {
     activeSpatialAudioSource = null;
   }
   if ('speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
-  }
-
-  const cleanText = text
-    .replace(/[*_#`~[\]()]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .slice(0, 260)
-    .trim();
-
-  let spatialBufferPlayed = false;
-
-  // 3. True 3D spatial audio playback through Web Audio API PannerNode (HRTF model)
-  if (audioCtx && pannerNode) {
     try {
-      if (audioCtx.state === 'suspended') {
-        await audioCtx.resume();
-      }
-      const res = await fetch(`/api/spatial/tts?text=${encodeURIComponent(cleanText)}`);
-      if (res.ok) {
-        const arrayBuf = await res.arrayBuffer();
-        const audioBuf = await audioCtx.decodeAudioData(arrayBuf);
-
-        const sourceNode = audioCtx.createBufferSource();
-        sourceNode.buffer = audioBuf;
-        sourceNode.connect(pannerNode);
-
-        activeSpatialAudioSource = sourceNode;
-
-        if (waveAnim) waveAnim.classList.add('active');
-        sourceNode.onended = () => {
-          if (waveAnim) waveAnim.classList.remove('active');
-          if (activeSpatialAudioSource === sourceNode) {
-            activeSpatialAudioSource = null;
-          }
-          finishCallback();
-        };
-
-        sourceNode.start(0);
-        spatialBufferPlayed = true;
-      }
-    } catch (ttsErr) {
-      console.warn('[SpatialTTS] Web Audio spatial buffer error, using SpeechSynthesis fallback:', ttsErr.message);
-    }
+      window.speechSynthesis.cancel();
+    } catch (e) {}
   }
-
-  // 4. Fallback: Browser Web Speech API
-  if (!spatialBufferPlayed && 'speechSynthesis' in window) {
+  activeUtterance = null;
+  if (waveAnim) waveAnim.classList.remove('active');
+  if (typeof ttsActiveFinishCallback === 'function') {
+    const cb = ttsActiveFinishCallback;
+    ttsActiveFinishCallback = null;
     try {
-      const utterance = new SpeechSynthesisUtterance(cleanText);
-      utterance.rate = 1.05;
-      utterance.pitch = 1.0;
-
-      utterance.onstart = () => {
-        if (waveAnim) waveAnim.classList.add('active');
-      };
-      utterance.onend = () => {
-        if (waveAnim) waveAnim.classList.remove('active');
-        finishCallback();
-      };
-      utterance.onerror = () => {
-        if (waveAnim) waveAnim.classList.remove('active');
-        finishCallback();
-      };
-
-      window.speechSynthesis.speak(utterance);
-    } catch (speechErr) {
-      console.warn('[SpatialTTS] SpeechSynthesis failed:', speechErr.message);
-      finishCallback();
-    }
-  } else if (!spatialBufferPlayed) {
-    // If neither TTS method was available or both failed, release lock immediately
-    finishCallback();
+      cb();
+    } catch (e) {}
   }
+}
+
+/**
+ * Sequentially triggers the next sentence in the queue.
+ * Each sentence gets a new SpeechSynthesisUtterance, chained via onend.
+ */
+function playNextTtsSentenceInQueue() {
+  if (!ttsPlaybackActive) {
+    stopSpatialAudio();
+    return;
+  }
+
+  if (ttsCurrentSentenceIndex >= ttsSentenceQueue.length) {
+    console.log(`[SpatialTTS] Finished reading all ${ttsSentenceQueue.length} sentences successfully.`);
+    const finish = ttsActiveFinishCallback;
+    stopSpatialAudio();
+    if (typeof finish === 'function') {
+      finish();
+    }
+    return;
+  }
+
+  const sentence = ttsSentenceQueue[ttsCurrentSentenceIndex];
+  console.log(`[SpatialTTS] Speaking sentence ${ttsCurrentSentenceIndex + 1}/${ttsSentenceQueue.length}: "${sentence}"`);
+
+  try {
+    const utterance = new SpeechSynthesisUtterance(sentence);
+    utterance.rate = 1.03;
+    utterance.pitch = 1.0;
+    utterance.lang = 'en-US';
+
+    // Retain global reference so V8 does not garbage collect it mid-playback
+    activeUtterance = utterance;
+
+    utterance.onstart = () => {
+      if (waveAnim) waveAnim.classList.add('active');
+    };
+
+    utterance.onend = () => {
+      if (!ttsPlaybackActive) return;
+      // Instantly advance to the next sentence in the queue
+      ttsCurrentSentenceIndex++;
+      playNextTtsSentenceInQueue();
+    };
+
+    utterance.onerror = (event) => {
+      console.warn(`[SpatialTTS] Sentence ${ttsCurrentSentenceIndex + 1} playback notice:`, event?.error);
+      if (!ttsPlaybackActive) return;
+      if (event?.error === 'interrupted' || event?.error === 'canceled') {
+        return;
+      }
+      ttsCurrentSentenceIndex++;
+      playNextTtsSentenceInQueue();
+    };
+
+    // Unpause if browser speech engine is suspended
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+    }
+
+    window.speechSynthesis.speak(utterance);
+  } catch (err) {
+    console.warn('[SpatialTTS] Error synthesizing sentence:', err);
+    ttsCurrentSentenceIndex++;
+    playNextTtsSentenceInQueue();
+  }
+}
+
+async function speakSpatialAudio(text, position, onComplete) {
+  // 1. Clean stop of any previous speech/queue
+  stopSpatialAudio();
+
+  if (!text || typeof text !== 'string' || !text.trim()) {
+    if (typeof onComplete === 'function') onComplete();
+    return;
+  }
+
+  initSpatialAudio();
+
+  // 2. Position spatial 3D audio panner & visual emitter at the target object coordinates
+  if (position && typeof position.x === 'number') {
+    updateSpatialEmitterPosition(position.x, position.y, position.z);
+  }
+
+  // 3. Play acoustic beacon feedback chime emanating directly from the object
+  triggerSpatialChime(560, 0.3);
+
+  // 4. Split incoming text into an array of smaller sentence chunks (Queue System)
+  const sentences = splitTextIntoSentences(text);
+  if (sentences.length === 0) {
+    if (typeof onComplete === 'function') onComplete();
+    return;
+  }
+
+  console.log(`[SpatialTTS] Queued ${sentences.length} sentences for sequential spatial playback.`);
+
+  if (!('speechSynthesis' in window)) {
+    console.warn('[SpatialTTS] SpeechSynthesis API unavailable in this browser.');
+    if (typeof onComplete === 'function') onComplete();
+    return;
+  }
+
+  ttsSentenceQueue = sentences;
+  ttsCurrentSentenceIndex = 0;
+  ttsPlaybackActive = true;
+  ttsActiveFinishCallback = onComplete;
+
+  // 5. Chrome watchdog timer: prevents background suspension during long multi-sentence playback
+  if (ttsHeartbeatTimer) clearInterval(ttsHeartbeatTimer);
+  ttsHeartbeatTimer = setInterval(() => {
+    if (ttsPlaybackActive && 'speechSynthesis' in window && window.speechSynthesis.speaking) {
+      window.speechSynthesis.pause();
+      window.speechSynthesis.resume();
+    }
+  }, 10000);
+
+  // 6. Begin sequential sentence queue playback
+  playNextTtsSentenceInQueue();
 }
 
 function appendChatMessage(sender, text) {
