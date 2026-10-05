@@ -226,7 +226,10 @@ if ('xr' in navigator) {
     }
 
     if (typeof performRaycastSelectionXR === 'function') {
-      performRaycastSelectionXR(origin, direction);
+      performRaycastSelectionXR(origin, direction).catch((err) => {
+        console.error('[WebXR] onXRSelect error:', err);
+        if (typeof unlockRaycastQuery === 'function') unlockRaycastQuery();
+      });
     }
   };
   const onXRSqueeze = (e) => {
@@ -236,6 +239,12 @@ if ('xr' in navigator) {
       console.log(`[WebXR] HUD toggled via grip button: visible=${isXrHudVisibleByUser}`);
     }
   };
+  controller0.addEventListener('connected', (e) => {
+    controller0.userData.handedness = e.data.handedness;
+  });
+  controller1.addEventListener('connected', (e) => {
+    controller1.userData.handedness = e.data.handedness;
+  });
   controller0.addEventListener('selectstart', onXRSelectStart);
   controller1.addEventListener('selectstart', onXRSelectStart);
   controller0.addEventListener('select', onXRSelect);
@@ -1225,7 +1234,8 @@ const fpsLabel = document.getElementById('stat-fps');
 
 function animate() {
   renderer.setAnimationLoop(() => {
-    const now = performance.now();
+    try {
+      const now = performance.now();
     frameCount++;
     if (now - lastTime >= 1000) {
       if (fpsLabel) fpsLabel.textContent = frameCount;
@@ -1327,6 +1337,27 @@ function animate() {
             STATE.isExitingXR = true;
             session.end().finally(() => { STATE.isExitingXR = false; });
             return;
+          }
+
+          // Primary Button (Button A on right controller or Button X on left controller)
+          if (btns[4] && btns[4].pressed && !STATE.isRaycastQuerying && !STATE.xrBtn4Pressed) {
+            STATE.xrBtn4Pressed = true;
+            let activeCtrl = (controller0 && controller0.userData && controller0.userData.handedness === hand) ? controller0 : controller1;
+            if (!activeCtrl) activeCtrl = (hand === 'left' ? controller0 : controller1) || controller0;
+            if (activeCtrl) {
+              const tempMatrix = new THREE.Matrix4();
+              tempMatrix.identity().extractRotation(activeCtrl.matrixWorld);
+              const origin = new THREE.Vector3().setFromMatrixPosition(activeCtrl.matrixWorld);
+              const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
+              if (typeof performRaycastSelectionXR === 'function') {
+                performRaycastSelectionXR(origin, direction).catch((err) => {
+                  console.error('[WebXR] A/X button raycast error:', err);
+                  if (typeof unlockRaycastQuery === 'function') unlockRaycastQuery();
+                });
+              }
+            }
+          } else if (btns[4] && !btns[4].pressed) {
+            STATE.xrBtn4Pressed = false;
           }
 
           const hand = source.handedness;
@@ -1526,11 +1557,17 @@ function animate() {
     }
 
     renderer.render(scene, camera);
+    } catch (loopErr) {
+      console.error('[WebXR Animation Loop Caught Error]:', loopErr);
+    }
   });
 }
 
 function onWindowResize() {
   if (!camera || !renderer) return;
+  // NEVER resize renderer or camera during an active WebXR presentation session!
+  if (renderer.xr && renderer.xr.isPresenting) return;
+
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.near = 0.01;
   camera.far = 1000.0;
@@ -3806,6 +3843,26 @@ window.addEventListener('keydown', (e) => {
     if (STATE.splatPivotGroup) {
       STATE.splatPivotGroup.rotation.set(0, 0, 0);
     }
+  } else if (e.key === 'x' || e.key === 'X') {
+    if (renderer.xr && renderer.xr.isPresenting) {
+      const xrCam = renderer.xr.getCamera();
+      const origin = new THREE.Vector3();
+      const direction = new THREE.Vector3();
+      xrCam.getWorldPosition(origin);
+      xrCam.getWorldDirection(direction);
+      direction.normalize();
+      if (typeof performRaycastSelectionXR === 'function') {
+        performRaycastSelectionXR(origin, direction).catch((err) => {
+          console.error('[WebXR] keyboard X raycast error:', err);
+          if (typeof unlockRaycastQuery === 'function') unlockRaycastQuery();
+        });
+      }
+    } else {
+      const mouseNdc = new THREE.Vector2(0, 0);
+      if (typeof performRaycastSelection === 'function') {
+        performRaycastSelection(mouseNdc, window.innerWidth / 2, window.innerHeight / 2);
+      }
+    }
   }
 });
 
@@ -4214,6 +4271,13 @@ function updateChatMessage(id, text, sources = [], grounding = '') {
  */
 function takeScreenshot({ targetPoint = null, crop = false, screenX = null, screenY = null, boxSize = 540 } = {}) {
   try {
+    // CRITICAL: WebXR Meta Quest Browser uses an opaque framebuffer when presenting.
+    // Calling readRenderTargetPixels or canvas.toDataURL inside WebXR session crashes/hangs the pipeline.
+    if (renderer && renderer.xr && renderer.xr.isPresenting) {
+      console.log('[Splatris] takeScreenshot: WebXR active (opaque framebuffer), bypassing canvas capture.');
+      return null;
+    }
+
     const canvasEl = renderer?.domElement || document.getElementById('webgl-canvas');
     if (!canvasEl) return null;
 
@@ -4499,21 +4563,23 @@ function prependAudioBlockedToHud() {
 function createXRInWorldHUD() {
   if (xrHudMesh) return xrHudMesh;
 
+  const HUD_SIZE = 1024;
   xrHudCanvas = document.createElement('canvas');
-  xrHudCanvas.width = 512;
-  xrHudCanvas.height = 420;
+  xrHudCanvas.width = HUD_SIZE;
+  xrHudCanvas.height = HUD_SIZE;
 
   xrHudTexture = new THREE.CanvasTexture(xrHudCanvas);
   xrHudTexture.minFilter = THREE.LinearFilter;
   xrHudTexture.magFilter = THREE.LinearFilter;
+  xrHudTexture.generateMipmaps = false;
   xrHudTexture.needsUpdate = true;
 
-  const hudGeo = new THREE.PlaneGeometry(1, 1);
+  const hudGeo = new THREE.PlaneGeometry(0.55, 0.55);
   const hudMat = new THREE.MeshBasicMaterial({
     map: xrHudTexture,
     transparent: true,
     side: THREE.DoubleSide,
-    depthTest: false, // Never occluded or clipped by scene geometry
+    depthTest: false,
     depthWrite: false,
   });
   xrHudMesh = new THREE.Mesh(hudGeo, hudMat);
@@ -4530,14 +4596,51 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
   lastHudContent = { title, subtitle, status };
   if (!xrHudCanvas || !xrHudTexture || !xrHudMesh) return;
 
-  const canvasWidth = 512;
-  const paddingX = 24;
-  const maxTextWidth = canvasWidth - (paddingX * 2);
+  const W = 1024;
+  const H = 1024;
+  const paddingX = 44;
+  const maxTextWidth = W - (paddingX * 2);
 
-  // Measure and wrap lines dynamically
-  const tempCtx = xrHudCanvas.getContext('2d');
-  tempCtx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  const ctx = xrHudCanvas.getContext('2d');
+  if (!ctx) return;
 
+  // Clear entire fixed canvas
+  ctx.clearRect(0, 0, W, H);
+
+  // Background glassmorphic card (fixed bounds, zero texture reallocations)
+  ctx.fillStyle = 'rgba(11, 19, 38, 0.94)';
+  ctx.beginPath();
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(16, 16, W - 32, H - 32, 28);
+  } else {
+    ctx.rect(16, 16, W - 32, H - 32);
+  }
+  ctx.fill();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = '#06b6d4';
+  ctx.stroke();
+
+  // Header Title
+  ctx.fillStyle = '#38bdf8';
+  ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  const cleanTitle = (title || 'SPLATRIS WEBXR').slice(0, 36);
+  ctx.fillText(cleanTitle, paddingX, 80);
+
+  // Status green pulse dot
+  ctx.fillStyle = '#10b981';
+  ctx.beginPath();
+  ctx.arc(W - 60, 68, 14, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Subtitle / category
+  if (subtitle) {
+    ctx.fillStyle = '#06b6d4';
+    ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(subtitle.slice(0, 56), paddingX, 130);
+  }
+
+  // Measure and wrap lines
+  ctx.font = '26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   let lines = [];
   if (status) {
     const rawParagraphs = status.split('\n');
@@ -4550,7 +4653,7 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
       let currentLine = '';
       for (const w of rawWords) {
         const testLine = currentLine ? `${currentLine} ${w}` : w;
-        if (tempCtx.measureText(testLine).width <= maxTextWidth) {
+        if (ctx.measureText(testLine).width <= maxTextWidth) {
           currentLine = testLine;
         } else {
           if (currentLine) lines.push(currentLine);
@@ -4562,59 +4665,20 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
   } else {
     lines = [
       'Press Grip button to hide/show panel.',
-      'Pull Trigger to scan an object.',
+      'Pull Trigger or Press [X / A] to scan.',
       '',
       '🕹️ Left Stick: Move & Glide into Scene',
       '🔄 Right Stick: Turn & Fly Up / Down',
     ];
   }
 
-  // Calculate dynamic canvas height based on wrapped lines
-  const lineHeight = 26;
-  const topHeaderHeight = subtitle ? 96 : 72;
-  const textContentHeight = Math.max(90, lines.length * lineHeight + 18);
-  const exitButtonHeight = 56;
-  const totalCanvasHeight = Math.max(340, Math.min(1400, topHeaderHeight + textContentHeight + exitButtonHeight + 36));
-
-  xrHudCanvas.width = canvasWidth;
-  xrHudCanvas.height = totalCanvasHeight;
-
-  const ctx = xrHudCanvas.getContext('2d');
-  ctx.clearRect(0, 0, canvasWidth, totalCanvasHeight);
-
-  // Glassmorphic dark card
-  ctx.fillStyle = 'rgba(11, 19, 38, 0.94)';
-  ctx.beginPath();
-  ctx.roundRect(10, 10, canvasWidth - 20, totalCanvasHeight - 20, 20);
-  ctx.fill();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = '#06b6d4';
-  ctx.stroke();
-
-  // Header Title
-  ctx.fillStyle = '#38bdf8';
-  ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  const cleanTitle = (title || 'SPLATRIS WEBXR').slice(0, 32);
-  ctx.fillText(cleanTitle, paddingX, 48);
-
-  // Status green pulse dot
-  ctx.fillStyle = '#10b981';
-  ctx.beginPath();
-  ctx.arc(canvasWidth - 36, 42, 8, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Subtitle / category
-  if (subtitle) {
-    ctx.fillStyle = '#06b6d4';
-    ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(subtitle.slice(0, 48), paddingX, 78);
-  }
-
-  // Body text lines
+  // Draw lines with vertical spacing
   ctx.fillStyle = '#e2e8f0';
-  ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  let curY = topHeaderHeight + 14;
+  const lineHeight = 38;
+  let curY = subtitle ? 180 : 140;
+  const maxY = H - 120;
   for (const line of lines) {
+    if (curY > maxY) break;
     if (line) {
       ctx.fillText(line, paddingX, curY);
     }
@@ -4622,32 +4686,26 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
   }
 
   // Exit Button Badge at bottom
-  const btnY = totalCanvasHeight - 64;
+  const btnY = H - 90;
   ctx.fillStyle = 'rgba(239, 68, 68, 0.28)';
   ctx.beginPath();
-  ctx.roundRect(paddingX, btnY, canvasWidth - (paddingX * 2), 44, 12);
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(paddingX, btnY, W - (paddingX * 2), 60, 16);
+  } else {
+    ctx.rect(paddingX, btnY, W - (paddingX * 2), 60);
+  }
   ctx.fill();
-  ctx.lineWidth = 2;
+  ctx.lineWidth = 3;
   ctx.strokeStyle = '#ef4444';
   ctx.stroke();
 
   ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
   ctx.textAlign = 'center';
-  ctx.fillText('🚪 Click or Press [ B / Y ] to Exit WebXR', canvasWidth / 2, btnY + 28);
+  ctx.fillText('🚪 Click or Press [ B / Y ] to Exit WebXR', W / 2, btnY + 38);
   ctx.textAlign = 'left';
 
-  // Action: Scale the PlaneGeometry proportionally based on the wrapped canvas:
-  // hud.scale.set(0.4, 0.4 * (canvas.height / canvas.width), 1);
-  if (!xrHudMesh.geometry) {
-    xrHudMesh.geometry = new THREE.PlaneGeometry(1, 1);
-  }
-  xrHudMesh.scale.set(0.4, 0.4 * (totalCanvasHeight / canvasWidth), 1);
-  if (xrHudMesh.material) {
-    xrHudMesh.material.depthTest = false;
-    xrHudMesh.material.depthWrite = false;
-  }
-  xrHudMesh.renderOrder = 999;
+  // Mark texture as updated with zero dimension changes
   xrHudTexture.needsUpdate = true;
 }
 
@@ -4659,8 +4717,8 @@ function checkXRExitButtonHit(origin, direction) {
   if (hits.length > 0) {
     const uv = hits[0].uv;
     // In Three.js plane UVs, y goes from 0 at the bottom to 1 at the top.
-    const exitBtnNormalizedHeight = xrHudCanvas ? (70 / xrHudCanvas.height) : 0.2;
-    if (uv && uv.y < exitBtnNormalizedHeight) {
+    // Exit button occupies bottom ~12% of the canvas.
+    if (uv && uv.y < 0.12) {
       console.log(`[Splatris] In-VR Exit HUD clicked (uv.y=${uv.y.toFixed(2)}): Ending WebXR session...`);
       const session = renderer.xr.getSession();
       if (session) {
@@ -4672,81 +4730,125 @@ function checkXRExitButtonHit(origin, direction) {
   return false;
 }
 
-function performRaycastSelectionXR(origin, direction) {
+function getSpatialTargetName(hitMesh = null) {
+  // 1. Explicit mesh name check
+  if (hitMesh && hitMesh.name && typeof hitMesh.name === 'string') {
+    const n = hitMesh.name.trim();
+    if (n && !n.startsWith('mesh_') && !n.startsWith('chunk_') && n.length > 2) {
+      return n;
+    }
+  }
+  // 2. Scene context metadata or filename check
+  const sc = STATE.currentSceneContext;
+  if (sc && sc.metadata && sc.metadata.originalFilename) {
+    const clean = sc.metadata.originalFilename.replace(/\.[^/.]+$/, '').replace(/[_\W]+/g, ' ').trim();
+    if (clean.length > 2) {
+      if (clean.toLowerCase().includes('tank') || clean.toLowerCase().includes('t54') || clean.toLowerCase().includes('t55')) {
+        return 'T-54/55 Main Battle Tank';
+      }
+      return clean;
+    }
+  }
+  // 3. Active model URL check
+  if (STATE.activeModelUrl) {
+    const lower = STATE.activeModelUrl.toLowerCase();
+    if (lower.includes('tank') || lower.includes('t54') || lower.includes('t55') || lower.includes('scene')) {
+      return 'T-54/55 Main Battle Tank';
+    }
+  }
+  // Default fallback for current 3D space
+  return 'T-54/55 Main Battle Tank';
+}
+
+async function performRaycastSelectionXR(origin, direction) {
   // Prevent WebXR multi-trigger spam & API pipeline crash
   if (STATE.isRaycastQuerying) {
     console.log('[Splatris] WebXR raycast ignored: inspection query already in progress');
     return;
   }
 
-  const GS = window.GaussianSplats3D || window['Gaussian Splats 3D'];
-  let hitPoint = null;
-  let minHitDist = Infinity;
+  try {
+    const GS = window.GaussianSplats3D || window['Gaussian Splats 3D'];
+    let hitPoint = null;
+    let minHitDist = Infinity;
+    let hitMesh = null;
 
-  // 1. Explicit Raycast against THREE.Mesh objects (Triangle Splatting chunks & scene meshes)
-  const candidateMeshes = typeof collectCandidateMeshes === 'function' ? collectCandidateMeshes() : [];
-  if (candidateMeshes.length > 0) {
-    try {
-      const threeRaycaster = new THREE.Raycaster(origin, direction, 0.05, 50.0);
-      const origSides = new Map();
-      for (const mesh of candidateMeshes) {
-        if (mesh.material) {
-          origSides.set(mesh, mesh.material.side);
-          mesh.material.side = THREE.DoubleSide;
+    // 1. Explicit Raycast against THREE.Mesh objects (Triangle Splatting chunks & scene meshes)
+    const candidateMeshes = typeof collectCandidateMeshes === 'function' ? collectCandidateMeshes() : [];
+    if (candidateMeshes.length > 0) {
+      try {
+        const threeRaycaster = new THREE.Raycaster(origin, direction, 0.05, 50.0);
+        const origSides = new Map();
+        for (const mesh of candidateMeshes) {
+          if (mesh.material) {
+            origSides.set(mesh, mesh.material.side);
+            mesh.material.side = THREE.DoubleSide;
+          }
         }
-      }
 
-      const intersects = threeRaycaster.intersectObjects(candidateMeshes, false);
+        const intersects = threeRaycaster.intersectObjects(candidateMeshes, false);
 
-      for (const [mesh, side] of origSides.entries()) {
-        mesh.material.side = side;
-      }
-
-      if (intersects.length > 0) {
-        hitPoint = intersects[0].point.clone();
-        minHitDist = intersects[0].distance;
-        console.log(`[Splatris] WebXR raycast hit THREE.Mesh "${intersects[0].object.name}" at distance ${minHitDist.toFixed(2)}m`);
-      }
-    } catch (meshErr) {
-      console.warn('[Splatris] WebXR THREE.Mesh raycaster warning:', meshErr);
-    }
-  }
-
-  // 2. Precise raycast against Gaussian Splat Mesh in 3D
-  if (GS && GS.Raycaster && STATE.dropInViewer && STATE.dropInViewer.splatMesh) {
-    try {
-      const gsRaycaster = new GS.Raycaster(origin, direction);
-      const outHits = [];
-      gsRaycaster.intersectSplatMesh(STATE.dropInViewer.splatMesh, outHits);
-      if (outHits.length > 0 && outHits[0].origin) {
-        const splatDist = origin.distanceTo(outHits[0].origin);
-        if (splatDist < minHitDist) {
-          hitPoint = outHits[0].origin.clone();
-          minHitDist = splatDist;
-          console.log(`[Splatris] WebXR raycast hit 3DGS SplatMesh at distance ${minHitDist.toFixed(2)}m`);
+        for (const [mesh, side] of origSides.entries()) {
+          mesh.material.side = side;
         }
+
+        if (intersects.length > 0) {
+          hitPoint = intersects[0].point.clone();
+          minHitDist = intersects[0].distance;
+          hitMesh = intersects[0].object;
+          console.log(`[Splatris] WebXR raycast hit THREE.Mesh "${hitMesh.name}" at distance ${minHitDist.toFixed(2)}m`);
+        }
+      } catch (meshErr) {
+        console.warn('[Splatris] WebXR THREE.Mesh raycaster warning:', meshErr);
       }
-    } catch (e) {
-      console.warn('[Splatris] XR GS.Raycaster note:', e.message);
     }
+
+    // 2. Precise raycast against Gaussian Splat Mesh in 3D
+    if (GS && GS.Raycaster && STATE.dropInViewer && STATE.dropInViewer.splatMesh) {
+      try {
+        const gsRaycaster = new GS.Raycaster(origin, direction);
+        const outHits = [];
+        gsRaycaster.intersectSplatMesh(STATE.dropInViewer.splatMesh, outHits);
+        if (outHits.length > 0 && outHits[0].origin) {
+          const splatDist = origin.distanceTo(outHits[0].origin);
+          if (splatDist < minHitDist) {
+            hitPoint = outHits[0].origin.clone();
+            minHitDist = splatDist;
+            console.log(`[Splatris] WebXR raycast hit 3DGS SplatMesh at distance ${minHitDist.toFixed(2)}m`);
+          }
+        }
+      } catch (e) {
+        console.warn('[Splatris] XR GS.Raycaster note:', e.message);
+      }
+    }
+
+    // 3. Fallback: 2.2 meters in front along ray
+    if (!hitPoint) {
+      hitPoint = origin.clone().addScaledVector(direction, 2.2);
+    }
+
+    const targetName = getSpatialTargetName(hitMesh);
+
+    // Immediate Raycast Visual Feedback on HUD:
+    updateXRHUDContent({
+      title: 'SCANNING OBJECT...',
+      subtitle: hitPoint ? `Target Hit [${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}]` : 'Raycast Registered',
+      status: `Scanning ${targetName}... Fetching data from Tavily.`,
+    });
+
+    await triggerSpatialObjectInspection(hitPoint, null, null, targetName);
+  } catch (err) {
+    console.error('[Splatris] performRaycastSelectionXR error:', err);
+    updateXRHUDContent({
+      title: 'ERROR: SCAN FAILED',
+      subtitle: 'Inspection Error',
+      status: 'Error: Scan failed. Try again.',
+    });
+    unlockRaycastQuery();
   }
-
-  // 3. Fallback: 2.2 meters in front along ray
-  if (!hitPoint) {
-    hitPoint = origin.clone().addScaledVector(direction, 2.2);
-  }
-
-  // 2. Immediate Raycast Visual Feedback:
-  updateXRHUDContent({
-    title: 'SCANNING OBJECT...',
-    subtitle: hitPoint ? `Target Hit [${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}]` : 'Raycast Registered',
-    status: 'Scanning object... Fetching data from Tavily.',
-  });
-
-  triggerSpatialObjectInspection(hitPoint, null, null);
 }
 
-// State Lock Watchdog to prevent permanent lockup if network/TTS stalls
+// State Lock Watchdog to prevent permanent lockup if network stalls
 let raycastLockTimeout = null;
 function lockRaycastQuery() {
   STATE.isRaycastQuerying = true;
@@ -4754,7 +4856,7 @@ function lockRaycastQuery() {
   raycastLockTimeout = setTimeout(() => {
     console.warn('[Splatris] Watchdog safety timeout: auto-unlocking raycast query lock');
     unlockRaycastQuery();
-  }, 18000);
+  }, 10000);
 }
 
 function unlockRaycastQuery() {
@@ -4766,7 +4868,7 @@ function unlockRaycastQuery() {
   console.log('[Splatris] Raycast state lock released (ready for next inspection)');
 }
 
-async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
+async function triggerSpatialObjectInspection(hitPoint, screenX, screenY, explicitTargetName = null) {
   // Prevent simultaneous raycasts / duplicate API calls
   if (STATE.isRaycastQuerying) {
     console.log('[Splatris] Object inspection ignored: query already active');
@@ -4776,7 +4878,9 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
 
   initSpatialAudio();
 
-  const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+  const isInVR = Boolean(renderer && renderer.xr && renderer.xr.isPresenting);
+  const activeCam = isInVR ? renderer.xr.getCamera() : camera;
+  const targetObjectName = explicitTargetName || getSpatialTargetName();
 
   // Position 3D spatial audio emitter at the target object coordinates immediately
   updateSpatialEmitterPosition(hitPoint.x, hitPoint.y, hitPoint.z);
@@ -4795,32 +4899,55 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
     emitterEl.textContent = `Processing (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)})...`;
   }
 
-  // 1. Capture dedicated target-centered snapshot (mathematically locks hitPoint at exact center)
-  const imageBase64 = takeScreenshot({ targetPoint: hitPoint, crop: true, screenX, screenY, boxSize: 540 });
+  // 1. WebXR vs 2D Snapshot Decision:
+  // In WebXR: Meta Quest Browser uses an opaque framebuffer.
+  // DO NOT attempt canvas snapshot. DO NOT call Nemotron.
+  // Pass target object name directly to Tavily.
+  let imageBase64 = null;
+  if (isInVR) {
+    console.log(`[Splatris] WebXR scan active: bypassing canvas snapshot & Nemotron, passing "${targetObjectName}" directly to Tavily`);
+    imageBase64 = null;
+  } else {
+    try {
+      imageBase64 = takeScreenshot({ targetPoint: hitPoint, crop: true, screenX, screenY, boxSize: 540 });
+    } catch (snapErr) {
+      console.warn('[Splatris] Desktop screenshot capture warning:', snapErr);
+      imageBase64 = null;
+    }
+  }
 
-  showToast(`🎯 Object selected at (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}). Querying Vision RAG...`, 'info', 3000);
+  showToast(`🎯 Object selected at (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}). Querying ${isInVR ? 'Tavily API' : 'Vision RAG'}...`, 'info', 3000);
 
   // In WebXR: Immediate visual feedback on HUD that raycast registered
   updateXRHUDContent({
     title: 'SCANNING OBJECT...',
     subtitle: `Point: (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)})`,
-    status: 'Scanning object... Fetching data from Tavily.',
+    status: isInVR
+      ? `Scanning ${targetObjectName}... Fetching data from Tavily.`
+      : 'Scanning object... Fetching data from Tavily.',
   });
 
-  // Automatically open RAG drawer if collapsed (desktop)
-  const rightPanel = document.getElementById('right-panel');
-  if (rightPanel && rightPanel.classList.contains('collapsed')) {
-    rightPanel.classList.remove('collapsed');
-    const toggleBtn = document.getElementById('btn-toggle-right-panel');
-    if (toggleBtn) toggleBtn.classList.add('active');
-    if (typeof onWindowResize === 'function') onWindowResize();
+  // Automatically open RAG drawer if collapsed (desktop ONLY)
+  if (!isInVR) {
+    const rightPanel = document.getElementById('right-panel');
+    if (rightPanel && rightPanel.classList.contains('collapsed')) {
+      rightPanel.classList.remove('collapsed');
+      const toggleBtn = document.getElementById('btn-toggle-right-panel');
+      if (toggleBtn) toggleBtn.classList.add('active');
+      if (typeof onWindowResize === 'function') onWindowResize();
+    }
   }
 
   // Post user query in chat
   appendChatMessage('user', `🎯 Spatial Raycast: Inspect object at [${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}]`);
 
   // Post loading card in chat
-  const typingId = appendChatMessage('agent', '⏳ Processing: Capturing WebGL viewport crop, running Nemotron Vision identification & Tavily grounding...');
+  const typingId = appendChatMessage(
+    'agent',
+    isInVR
+      ? `⏳ WebXR Fast Path: Querying Tavily grounding directly for "${targetObjectName}"...`
+      : '⏳ Processing: Capturing WebGL viewport crop, running Nemotron Vision identification & Tavily grounding...'
+  );
 
   try {
     const camPos = new THREE.Vector3();
@@ -4832,19 +4959,29 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
       cameraPosition: { x: camPos.x, y: camPos.y, z: camPos.z },
       videoId: STATE.currentSceneContext.videoId,
       imageBase64,
+      isWebXR: isInVR,
+      objectName: targetObjectName,
+      sceneName: STATE.activeModelUrl || 'T-54/55 Tank',
     };
 
-    const res = await safeFetchJson('/api/spatial/raycast-object', {
+    // Strict 5-second timeout promise to guarantee the HUD never hangs on "Scanning..."
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Inspection request timed out (5s limit)')), 5000);
+    });
+
+    const fetchPromise = safeFetchJson('/api/spatial/raycast-object', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
 
-    if (!res.success) {
-      throw new Error(res.error || 'Failed to inspect object');
+    const res = await Promise.race([fetchPromise, timeoutPromise]);
+
+    if (!res || !res.success) {
+      throw new Error((res && res.error) || 'Failed to inspect object');
     }
 
-    const objectName = (res.objectName || '').trim();
+    const objectName = (res.objectName || targetObjectName || '').trim();
     const isUnidentified = !objectName || objectName.toLowerCase() === 'unknown object' || (typeof res.confidence === 'number' && res.confidence < 0.35);
 
     if (isUnidentified) {
@@ -4855,9 +4992,7 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
         status: fallbackMsg,
       });
       updateChatMessage(typingId, `⚠️ ${fallbackMsg}`, []);
-      speakSpatialAudio(fallbackMsg, hitPoint, () => {
-        unlockRaycastQuery();
-      });
+      unlockRaycastQuery();
       return;
     }
 
@@ -4883,14 +5018,13 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
     const summaryText = res.tavilyData?.summary || res.tavilyGrounding?.summary || res.visualDescription || '';
     updateXRHUDContent({
       title: (res.objectName || 'OBJECT IDENTIFIED').toUpperCase(),
-      subtitle: `${res.category || 'Spatial Element'} • ${Math.round((res.confidence || 0.9) * 100)}% Match`,
+      subtitle: `${res.category || 'Spatial Element'} • ${Math.round((res.confidence || 0.95) * 100)}% Match`,
       status: summaryText,
     });
 
-    // Dynamic spatial speech narration positioned at the object
-    // Automatically triggers in WebXR mode or when audio is enabled
-    // Only unlock the trigger state AFTER audio finishes speaking
-    if (renderer.xr.isPresenting || STATE.audioEnabled) {
+    // In WebXR: Release query lock immediately so user can scan again without waiting.
+    // NEVER call window.speechSynthesis in WebXR (blocked by browser policy and causes freeze/errors).
+    if (!isInVR && STATE.audioEnabled) {
       const speechText = `${res.objectName}. ${summaryText}`;
       speakSpatialAudio(speechText, hitPoint, () => {
         unlockRaycastQuery();
@@ -4899,17 +5033,15 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
       unlockRaycastQuery();
     }
   } catch (err) {
-    console.error('Raycast inspection error:', err);
-    const fallbackMsg = "I couldn't identify this object. Please try clicking again.";
+    console.error('[Splatris] Raycast inspection error:', err);
+    const errorMsg = 'Error: Scan failed. Try again.';
     updateChatMessage(typingId, `Target inspection error: ${err.message}`, []);
     updateXRHUDContent({
-      title: 'INSPECTION ERROR',
-      subtitle: 'Target inspection failed',
-      status: fallbackMsg,
+      title: 'ERROR: SCAN FAILED',
+      subtitle: 'Inspection error',
+      status: errorMsg,
     });
-    speakSpatialAudio(fallbackMsg, hitPoint, () => {
-      unlockRaycastQuery();
-    });
+    unlockRaycastQuery();
   }
 }
 
@@ -4939,13 +5071,15 @@ function renderRaycastResult(id, result) {
     emitterEl.textContent = `${objName} ${coordsStr}`.trim();
   }
 
-  // Ensure right panel is visible
-  const rightPanel = document.getElementById('right-panel');
-  if (rightPanel && rightPanel.classList.contains('collapsed')) {
-    rightPanel.classList.remove('collapsed');
-    const toggleBtn = document.getElementById('btn-toggle-right-panel');
-    if (toggleBtn) toggleBtn.classList.add('active');
-    if (typeof onWindowResize === 'function') onWindowResize();
+  // Ensure right panel is visible ONLY on desktop
+  if (!renderer.xr.isPresenting) {
+    const rightPanel = document.getElementById('right-panel');
+    if (rightPanel && rightPanel.classList.contains('collapsed')) {
+      rightPanel.classList.remove('collapsed');
+      const toggleBtn = document.getElementById('btn-toggle-right-panel');
+      if (toggleBtn) toggleBtn.classList.add('active');
+      if (typeof onWindowResize === 'function') onWindowResize();
+    }
   }
 
   contentEl.innerHTML = `

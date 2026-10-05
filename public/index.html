@@ -23,7 +23,7 @@
   <script>
     // Defensive Polyfill for THREE.DataUtils.fromHalfFloat if missing
     if (window.THREE && window.THREE.DataUtils && !window.THREE.DataUtils.fromHalfFloat) {
-      window.THREE.DataUtils.fromHalfFloat = function  (val) {
+      window.THREE.DataUtils.fromHalfFloat = function   (val) {
         const exponent = (val & 0x7C00) >> 10;
         const fraction = val & 0x03FF;
         const sign = (val & 0x8000) ? -1 : 1;
@@ -31,8 +31,7 @@
         if (exponent === 0x1F) return fraction ? NaN : sign * Infinity;
         return sign * Math.pow(2, exponent - 15) * (1 + fraction / 1024);
       };
-    }
-  </script>
+      </script>
   <!-- Dedicated 3D Gaussian Splatting Engine with Cache Busting -->
   <script src="lib/gaussian-splats-3d.umd.js?v=20261003_stereo_fix"></script>
 
@@ -751,7 +750,7 @@
     </div>
   </footer>
 
-  <script src="app.js?v=20260930_clean_copy_v1"></script>
+  <script src="app.js?v=20261005_xr_crash_cure_v2"></script>
 </body>
 
 </html>

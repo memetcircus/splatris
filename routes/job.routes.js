@@ -104,18 +104,18 @@ router.get('/active/:sceneId', (req, res) => {
       hasActiveJob: Boolean(job),
       job: job
         ? {
-            jobId: job.jobId,
-            sceneId: job.sceneId,
-            videoId: job.videoId,
-            status: job.status,
-            stage: job.stage,
-            progress: job.progress,
-            trainingMethod: job.trainingMethod,
-            error: job.error || null,
-            createdAt: job.createdAt,
-            isSuspended: job.status === 'suspended',
-            isProcessing: job.status === 'processing',
-          }
+          jobId: job.jobId,
+          sceneId: job.sceneId,
+          videoId: job.videoId,
+          status: job.status,
+          stage: job.stage,
+          progress: job.progress,
+          trainingMethod: job.trainingMethod,
+          error: job.error || null,
+          createdAt: job.createdAt,
+          isSuspended: job.status === 'suspended',
+          isProcessing: job.status === 'processing',
+        }
         : null,
     });
   } catch (error) {
@@ -149,14 +149,14 @@ router.get('/cache-status/:sceneId', async (req, res) => {
 
     let hasCache = true;
     try {
-      const endpoint = process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.98.170:8000';
+      const endpoint = process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.112.102:8000';
       const cleanEndpoint = endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint;
       const resp = await fetch(`${cleanEndpoint}/cache/status/${sceneId}`, { signal: AbortSignal.timeout(3000) });
       if (resp.ok) {
         const data = await resp.json();
         hasCache = Boolean(data.hasCache);
       }
-    } catch {}
+    } catch { }
 
     res.json({
       success: true,

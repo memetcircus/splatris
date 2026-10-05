@@ -178,20 +178,9 @@ TAVILY_CACHE.set('Soviet T-34 Medium Tank', {
  * @returns {Promise<object>}
  */
 export async function enrichWithTavily(objectName) {
-  const normName = (objectName || 'Identified 3D Object').trim();
-
-  // Fast path: check in-memory cache
-  if (TAVILY_CACHE.has(normName)) {
-    console.log(`[VisionRAG] Serving cached Tavily grounding for "${normName}" (0ms)`);
-    return TAVILY_CACHE.get(normName);
-  }
-
-  const lower = normName.toLowerCase();
-  if ((lower.includes('54') || lower.includes('55') || lower.includes('t54') || lower.includes('t55')) && TAVILY_CACHE.has('T-54/55 Main Battle Tank')) {
-    return TAVILY_CACHE.get('T-54/55 Main Battle Tank');
-  }
-  if (lower.includes('tank') && TAVILY_CACHE.has('Soviet T-34 Medium Tank')) {
-    return TAVILY_CACHE.get('Soviet T-34 Medium Tank');
+  if (TAVILY_CACHE.has(objectName)) {
+    console.log(`[VisionRAG] Serving cached Tavily grounding for "${objectName}" (0ms)`);
+    return TAVILY_CACHE.get(objectName);
   }
 
   const apiKey = process.env.TAVILY_API_KEY;
@@ -297,7 +286,16 @@ export async function identifyObjectFromMetadata({ cleanModelName, sceneName, po
       } catch {
         const modelFiles = await fs.readdir(path.resolve('uploads', 'models'));
         const jsonFiles = modelFiles.filter(f => f.endsWith('.json'));
-        if (jsonFiles.length > 0) {
+        for (const jf of jsonFiles) {
+          try {
+            const content = await fs.readFile(path.resolve('uploads', 'models', jf), 'utf-8');
+            if (content.toLowerCase().includes('tank')) {
+              raw = content;
+              break;
+            }
+          } catch { }
+        }
+        if (!raw && jsonFiles.length > 0) {
           raw = await fs.readFile(path.resolve('uploads', 'models', jsonFiles[0]), 'utf-8');
         }
       }
@@ -570,3 +568,4 @@ export default {
   enrichWithTavily,
   cropAndIdentifyObject,
 };
+

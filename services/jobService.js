@@ -84,7 +84,7 @@ export function createJob({
     filteredFrameIndices,
     trainingMethod: method,
     status: 'processing', // 'processing' | 'completed' | 'failed' | 'aborted'
-    stage: isBypass 
+    stage: isBypass
       ? '⚡ COLMAP Cache Hit! Skipping upload & feature extraction...'
       : 'Submitting job to Nebius GPU pipeline',
     progress: isBypass ? 35 : 5,
@@ -103,8 +103,8 @@ export function createJob({
         if (parsed.originalFilename) job.originalFilename = parsed.originalFilename;
         if (parsed.deviceName) job.deviceName = parsed.deviceName;
         if (parsed.uploadTimestamp) job.uploadTimestamp = parsed.uploadTimestamp;
-      } catch {}
-    }).catch(() => {});
+      } catch { }
+    }).catch(() => { });
   }
 
   jobs.set(jobId, job);
@@ -233,7 +233,7 @@ export async function cleanupPostTraining(job) {
       for (const file of files) {
         if (file.startsWith(job.videoId)) {
           const filePath = path.join(uploadsDir, file);
-          await fs.unlink(filePath).catch(() => {});
+          await fs.unlink(filePath).catch(() => { });
           console.log(`[Cleanup] Deleted raw video: ${file}`);
         }
       }
@@ -244,7 +244,7 @@ export async function cleanupPostTraining(job) {
 
   // 3. Purge remote Nebius GPU worker intermediate directory via SSH
   try {
-    const workerIp = (process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.98.170:8000')
+    const workerIp = (process.env.NEBIUS_GPU_ENDPOINT || 'http://195.242.13.40:8000')
       .replace('http://', '')
       .replace(':8000', '');
     const { exec } = await import('node:child_process');
@@ -252,7 +252,7 @@ export async function cleanupPostTraining(job) {
       if (err) console.warn('[Cleanup] Remote SSH cleanup notice:', err.message);
       else console.log(`[Cleanup] Remote worker /tmp/splatris_jobs/${job.jobId} purged via SSH`);
     });
-  } catch (e) {}
+  } catch (e) { }
 
   // 4. Prune models in uploads/models/, keeping only the last 3
   await pruneOldModels(3);
@@ -280,14 +280,14 @@ export async function pruneOldModels(keepCount = 3) {
     // Prune models past the keepCount limit
     const toDelete = jobSplats.slice(keepCount);
     for (const item of toDelete) {
-      await fs.unlink(item.filePath).catch(() => {});
+      await fs.unlink(item.filePath).catch(() => { });
       console.log(`[JobService] Pruned older model: ${item.name}`);
     }
 
     // Clean up any legacy job_ directories in uploads/models/
     for (const entry of entries) {
       if (entry.isDirectory() && entry.name.startsWith('job_')) {
-        await fs.rm(path.join(MODELS_DIR, entry.name), { recursive: true, force: true }).catch(() => {});
+        await fs.rm(path.join(MODELS_DIR, entry.name), { recursive: true, force: true }).catch(() => { });
       }
     }
   } catch (err) {
@@ -328,7 +328,7 @@ export async function getRecentCategorizedModels(limit = 3) {
           const data = JSON.parse(raw);
           const base = entry.name.replace('.json', '');
           sidecars.set(base, data);
-        } catch {}
+        } catch { }
       }
     }
 
@@ -363,7 +363,7 @@ export async function getRecentCategorizedModels(limit = 3) {
       try {
         await fs.access(chunksPath);
         chunksUrl = `/uploads/models/${baseName}.chunks.bin`;
-      } catch {}
+      } catch { }
 
       splatFiles.push({
         filename: entry.name,
@@ -468,7 +468,7 @@ export async function getModelMeta(sceneId) {
         isVideo: !isImage,
         found: true,
       };
-    } catch {}
+    } catch { }
 
     // 2. Search all json sidecars in MODELS_DIR
     const files = await fs.readdir(MODELS_DIR);
@@ -487,7 +487,7 @@ export async function getModelMeta(sceneId) {
             found: true,
           };
         }
-      } catch {}
+      } catch { }
     }
 
     // 3. If sceneId is 'scene' or default, find the newest active model
@@ -609,7 +609,7 @@ export function getJob(jobIdOrSceneId) {
       if (fsSync.existsSync(jsonPath)) {
         meta = JSON.parse(fsSync.readFileSync(jsonPath, 'utf-8'));
       }
-    } catch (e) {}
+    } catch (e) { }
 
     if (job) {
       if (job.status !== 'completed') {
@@ -664,7 +664,7 @@ export async function resumeJob({ jobId, sceneId }) {
   }
 
   // Verify worker availability before resuming
-  const workerEndpoint = process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.98.170:8000';
+  const workerEndpoint = process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.112.102:8000';
   const cleanEndpoint = workerEndpoint.replace(/\/$/, '');
 
   try {
@@ -721,17 +721,17 @@ export async function abortJob(jobId) {
   // Clean up local intermediate frames and uploads for this job/video
   if (job?.videoId) {
     const framesDir = path.resolve('uploads', 'frames', job.videoId);
-    await fs.rm(framesDir, { recursive: true, force: true }).catch(() => {});
+    await fs.rm(framesDir, { recursive: true, force: true }).catch(() => { });
     const uploadsDir = path.resolve('uploads');
     try {
       const files = await fs.readdir(uploadsDir);
       for (const file of files) {
         if (file.startsWith(job.videoId)) {
-          await fs.unlink(path.join(uploadsDir, file)).catch(() => {});
+          await fs.unlink(path.join(uploadsDir, file)).catch(() => { });
           console.log(`[Cleanup] Deleted video on abort: ${file}`);
         }
       }
-    } catch (e) {}
+    } catch (e) { }
   }
 
   return { success: true, jobId, status: 'aborted' };
@@ -796,7 +796,7 @@ export async function deleteScene(sceneId) {
       const base = entry.name.replace(/\.(splat|ply|json|bak|ksplat).*$/, '');
       if (targetIds.has(base) || entry.name.startsWith(cleanId)) {
         const filePath = path.join(MODELS_DIR, entry.name);
-        await fs.unlink(filePath).catch(() => {});
+        await fs.unlink(filePath).catch(() => { });
         deletedFiles.push(`models/${entry.name}`);
         console.log(`[JobService] Deleted model file: ${entry.name}`);
       }
@@ -814,7 +814,7 @@ export async function deleteScene(sceneId) {
       const isMatch = Array.from(targetIds).some((id) => entry.name.startsWith(id));
       if (isMatch) {
         const filePath = path.join(uploadsDir, entry.name);
-        await fs.unlink(filePath).catch(() => {});
+        await fs.unlink(filePath).catch(() => { });
         deletedFiles.push(`uploads/${entry.name}`);
         console.log(`[JobService] Deleted original upload file: ${entry.name}`);
       }
@@ -838,7 +838,7 @@ export async function deleteScene(sceneId) {
 
   // 6. Purge remote Nebius GPU worker directory via SSH
   try {
-    const workerIp = (process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.98.170:8000')
+    const workerIp = (process.env.NEBIUS_GPU_ENDPOINT || 'http://195.242.13.40:8000')
       .replace('http://', '')
       .replace(':8000', '');
     const { exec } = await import('node:child_process');
@@ -847,7 +847,7 @@ export async function deleteScene(sceneId) {
         if (!err) console.log(`[Cleanup] Remote worker /tmp/splatris_jobs/${id} purged via SSH`);
       });
     }
-  } catch (e) {}
+  } catch (e) { }
 
   return {
     success: true,

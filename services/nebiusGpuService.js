@@ -192,7 +192,7 @@ async function resolveExistingFramesDir(primaryDir, targetId, sceneId, videoId) 
         const files = await fs.readdir(primaryDir);
         if (files.some((f) => f.endsWith('.jpg') || f.endsWith('.png'))) return primaryDir;
       }
-    } catch {}
+    } catch { }
   }
 
   // 2. Check candidate paths in uploads/frames
@@ -207,7 +207,7 @@ async function resolveExistingFramesDir(primaryDir, targetId, sceneId, videoId) 
         const files = await fs.readdir(candidate);
         if (files.some((f) => f.endsWith('.jpg') || f.endsWith('.png'))) return candidate;
       }
-    } catch {}
+    } catch { }
   }
 
   // 3. Search directory with video_meta.json or tank frames
@@ -223,9 +223,9 @@ async function resolveExistingFramesDir(primaryDir, targetId, sceneId, videoId) 
           const files = await fs.readdir(sub);
           if (files.some((f) => f.endsWith('.jpg') || f.endsWith('.png'))) return sub;
         }
-      } catch {}
+      } catch { }
     }
-  } catch {}
+  } catch { }
 
   return primaryDir;
 }
@@ -356,7 +356,7 @@ async function dispatchToRemoteWorker({
       }
       const toDelete = jpgFiles.filter((_, idx) => !keepIndices.has(idx));
       jpgFiles = jpgFiles.filter((_, idx) => keepIndices.has(idx));
-      await Promise.all(toDelete.map((f) => fs.unlink(path.join(framesDir, f)).catch(() => {})));
+      await Promise.all(toDelete.map((f) => fs.unlink(path.join(framesDir, f)).catch(() => { })));
       console.log(`[NebiusGpuService] Decimated frames from ${total} to ${jpgFiles.length} (cap: ${MAX_FRAMES}) for wide baseline packaging`);
     }
 
@@ -395,7 +395,7 @@ async function dispatchToRemoteWorker({
       throw new Error(errorMsg);
     } finally {
       // Clean up local temp zip
-      await fs.unlink(zipPath).catch(() => {});
+      await fs.unlink(zipPath).catch(() => { });
     }
   }
 
@@ -478,7 +478,7 @@ async function dispatchToRemoteWorker({
 
       // Purge intermediate /tmp/splatris_jobs/<jobId> on worker to prevent disk exhaustion
       try {
-        await workerFetch(`${endpoint}/cleanup/${jobId}`, { method: 'POST', signal: AbortSignal.timeout(5000) }).catch(() => {});
+        await workerFetch(`${endpoint}/cleanup/${jobId}`, { method: 'POST', signal: AbortSignal.timeout(5000) }).catch(() => { });
         console.log(`[NebiusService] Triggered remote worker cleanup for job ${jobId}`);
       } catch (cleanErr) {
         console.warn(`[NebiusService] Remote cleanup notice:`, cleanErr.message);
@@ -708,7 +708,7 @@ export async function abortNebiusGpuJob(jobId) {
 
   // Backup SSH kill switch: guarantee immediate termination of active processes and disk purge
   try {
-    const workerIp = (process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.98.170:8000')
+    const workerIp = (process.env.NEBIUS_GPU_ENDPOINT || 'http://195.242.13.40:8000')
       .replace('http://', '')
       .replace(':8000', '');
     const { exec } = await import('node:child_process');
