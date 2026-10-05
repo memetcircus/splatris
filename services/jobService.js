@@ -430,6 +430,14 @@ export async function getRecentCategorizedModels(limit = 3) {
       }
     }
 
+    // Default first item to Standard 3DGS so it is active when opening the site first
+    uniqueModels.sort((a, b) => {
+      const aIs3dgs = (a.trainingMethod === '3dgs' || (!a.isImage && a.format === 'splat' && a.trainingMethod !== 'triangle')) ? 1 : 0;
+      const bIs3dgs = (b.trainingMethod === '3dgs' || (!b.isImage && b.format === 'splat' && b.trainingMethod !== 'triangle')) ? 1 : 0;
+      if (aIs3dgs !== bIs3dgs) return bIs3dgs - aIs3dgs;
+      return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
+    });
+
     let videoModels = uniqueModels.filter((m) => !m.isImage).slice(0, limit);
     const imageModels = uniqueModels.filter((m) => m.isImage).slice(0, limit);
 
