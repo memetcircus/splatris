@@ -5161,7 +5161,7 @@ function lockRaycastQuery() {
   raycastLockTimeout = setTimeout(() => {
     console.warn('[Splatris] Watchdog safety timeout: auto-unlocking raycast query lock');
     unlockRaycastQuery();
-  }, 10000);
+  }, 25000);
 }
 
 function unlockRaycastQuery() {
@@ -5269,9 +5269,9 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY, explic
       sceneName: STATE.activeModelUrl || 'T-54/55 Tank',
     };
 
-    // Strict 5-second timeout promise to guarantee the HUD never hangs on "Scanning..."
+    // Safety timeout promise to guarantee the HUD/UI recovers if network drops
     const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('Inspection request timed out (5s limit)')), 5000);
+      setTimeout(() => reject(new Error('Inspection request timed out. Please check network connection and try again.')), 20000);
     });
 
     const fetchPromise = safeFetchJson('/api/spatial/raycast-object', {

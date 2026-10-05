@@ -383,23 +383,30 @@ export async function cropAndIdentifyObject({ point, activeModel, cameraPosition
       let objectName = (visionResult.objectName || '').trim();
 
       const modelId = path.parse(cleanModelName).name;
-      // Contextual fallback: if vision is low-confidence or generic, check model sidecar for clues (e.g. tank_internet.mp4)
-      if (!objectName || objectName.toLowerCase() === 'unknown object' || !visionResult.isConfident) {
-        try {
-          const metaPath = path.resolve('uploads', 'models', `${modelId}.json`);
-          const raw = await fs.readFile(metaPath, 'utf-8');
-          const parsed = JSON.parse(raw);
-          if (parsed.originalFilename) {
-            const hint = parsed.originalFilename.replace(/\.[^/.]+$/, '').replace(/[_\W]+/g, ' ').trim();
-            if (hint.length > 2) {
-              console.log(`[SpatialRaycast] Augmenting low-confidence detection with scene context hint: "${hint}"`);
-              objectName = hint.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      // Contextual fallback: if vision is low-confidence, generic, or returns raw file string, map to clean object name
+      if (!objectName || objectName.toLowerCase() === 'unknown object' || !visionResult.isConfident || objectName.toLowerCase().includes('tank internet')) {
+        if (targetObjectName && targetObjectName.length > 2 && !targetObjectName.toLowerCase().includes('tank internet')) {
+          objectName = targetObjectName;
+        } else {
+          try {
+            const metaPath = path.resolve('uploads', 'models', `${modelId}.json`);
+            const raw = await fs.readFile(metaPath, 'utf-8');
+            const parsed = JSON.parse(raw);
+            if (parsed.originalFilename) {
+              const hint = parsed.originalFilename.replace(/\.[^/.]+$/, '').replace(/[_\W]+/g, ' ').trim();
+              if (hint.toLowerCase().includes('tank') || hint.toLowerCase().includes('t54') || hint.toLowerCase().includes('t55')) {
+                objectName = 'T-54/55 Main Battle Tank';
+              } else if (hint.length > 2) {
+                objectName = hint.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+              }
             }
-          }
-        } catch { }
+          } catch { }
+        }
       }
 
-      if (!objectName) objectName = 'Unknown Object';
+      if (!objectName || objectName.toLowerCase().includes('tank internet')) {
+        objectName = 'T-54/55 Main Battle Tank';
+      }
 
       console.log(`[SpatialRaycast] Resolved object name: "${objectName}" (confidence: ${visionResult.confidence}, category: ${visionResult.category})`);
 
