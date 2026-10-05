@@ -409,13 +409,29 @@ export async function getRecentCategorizedModels(limit = 3) {
     const defaultSpace = splatFiles.find((m) => m.name === 'scene' && m.format === 'splat');
 
     const allModels = [...jobSplats];
-    if (defaultSpace && !allModels.some((m) => m.name === 'scene')) {
-      allModels.push(defaultSpace);
+    if (defaultSpace) {
+      const isAlreadyPresent = allModels.some(
+        (m) => m.name === 'scene' || (defaultSpace.jobId && m.jobId === defaultSpace.jobId) || (m.title === defaultSpace.title && m.sizeFormatted === defaultSpace.sizeFormatted)
+      );
+      if (!isAlreadyPresent) {
+        allModels.push(defaultSpace);
+      }
     }
     allModels.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-    let videoModels = allModels.filter((m) => !m.isImage).slice(0, limit);
-    const imageModels = allModels.filter((m) => m.isImage).slice(0, limit);
+    // Deduplicate models to guarantee no twin cards appear in recent spaces
+    const seenKeys = new Set();
+    const uniqueModels = [];
+    for (const m of allModels) {
+      const key = `${m.jobId || m.name}_${m.title}`;
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        uniqueModels.push(m);
+      }
+    }
+
+    let videoModels = uniqueModels.filter((m) => !m.isImage).slice(0, limit);
+    const imageModels = uniqueModels.filter((m) => m.isImage).slice(0, limit);
 
     // If videoModels is empty and defaultSpace exists, ensure defaultSpace is present
     if (videoModels.length === 0 && defaultSpace) {
@@ -425,7 +441,7 @@ export async function getRecentCategorizedModels(limit = 3) {
     return {
       videoModels,
       imageModels,
-      models: allModels.slice(0, limit * 2),
+      models: uniqueModels.slice(0, limit * 2),
     };
   } catch (err) {
     console.error('[JobService] Error retrieving categorized models:', err);

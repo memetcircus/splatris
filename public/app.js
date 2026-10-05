@@ -5882,9 +5882,19 @@ async function loadRecentScenes() {
       return;
     }
 
-    const videoModels = (data.videoModels || []).slice(0, 3);
-    const imageModels = (data.imageModels || []).slice(0, 3);
-    const combinedModels = data.models || [...videoModels, ...imageModels];
+    const dedupeModels = (arr) => {
+      const seen = new Set();
+      return arr.filter((m) => {
+        const key = `${m.jobId || m.name}_${m.title}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    };
+
+    const videoModels = dedupeModels(data.videoModels || []).slice(0, 3);
+    const imageModels = dedupeModels(data.imageModels || []).slice(0, 3);
+    const combinedModels = dedupeModels(data.models || [...videoModels, ...imageModels]);
 
     STATE.recentModels = combinedModels;
     STATE.recentVideoModels = videoModels;
