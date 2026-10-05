@@ -708,7 +708,7 @@ export async function abortNebiusGpuJob(jobId) {
 
   // Backup SSH kill switch: guarantee immediate termination of active processes and disk purge
   try {
-    const workerIp = (process.env.NEBIUS_GPU_ENDPOINT || 'http://195.242.13.40:8000')
+    const workerIp = (process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.98.170:8000')
       .replace('http://', '')
       .replace(':8000', '');
     const { exec } = await import('node:child_process');

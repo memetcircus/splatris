@@ -149,7 +149,7 @@ router.get('/cache-status/:sceneId', async (req, res) => {
 
     let hasCache = true;
     try {
-      const endpoint = process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.112.102:8000';
+      const endpoint = process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.98.170:8000';
       const cleanEndpoint = endpoint.endsWith('/') ? endpoint.slice(0, -1) : endpoint;
       const resp = await fetch(`${cleanEndpoint}/cache/status/${sceneId}`, { signal: AbortSignal.timeout(3000) });
       if (resp.ok) {

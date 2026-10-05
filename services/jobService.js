@@ -244,7 +244,7 @@ export async function cleanupPostTraining(job) {
 
   // 3. Purge remote Nebius GPU worker intermediate directory via SSH
   try {
-    const workerIp = (process.env.NEBIUS_GPU_ENDPOINT || 'http://195.242.13.40:8000')
+    const workerIp = (process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.98.170:8000')
       .replace('http://', '')
       .replace(':8000', '');
     const { exec } = await import('node:child_process');
@@ -664,7 +664,7 @@ export async function resumeJob({ jobId, sceneId }) {
   }
 
   // Verify worker availability before resuming
-  const workerEndpoint = process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.112.102:8000';
+  const workerEndpoint = process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.98.170:8000';
   const cleanEndpoint = workerEndpoint.replace(/\/$/, '');
 
   try {
@@ -838,7 +838,7 @@ export async function deleteScene(sceneId) {
 
   // 6. Purge remote Nebius GPU worker directory via SSH
   try {
-    const workerIp = (process.env.NEBIUS_GPU_ENDPOINT || 'http://195.242.13.40:8000')
+    const workerIp = (process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.98.170:8000')
       .replace('http://', '')
       .replace(':8000', '');
     const { exec } = await import('node:child_process');
