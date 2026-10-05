@@ -4274,8 +4274,38 @@ function takeScreenshot({ targetPoint = null, crop = false, screenX = null, scre
     if (raycastTargetMesh) raycastTargetMesh.visible = false;
     if (xrHudMesh) xrHudMesh.visible = false;
 
+    const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera(camera) : camera;
+
+    // Calculate center pixel coordinates for cropping
+    const rect = canvasEl.getBoundingClientRect();
+    const scaleX = rect.width ? (canvasEl.width / rect.width) : 1;
+    const scaleY = rect.height ? (canvasEl.height / rect.height) : 1;
+
+    let centerPixelX;
+    let centerPixelY;
+    if (screenX != null && screenY != null) {
+      // If coordinates are in CSS pixel space (desktop mouse event), scale to canvas buffer pixels
+      if (!renderer.xr.isPresenting && screenX <= (rect.width || 0) + 1 && scaleX !== 1) {
+        centerPixelX = Math.round(screenX * scaleX);
+        centerPixelY = Math.round(screenY * scaleY);
+      } else {
+        centerPixelX = Math.round(screenX);
+        centerPixelY = Math.round(screenY);
+      }
+    } else if (targetPoint) {
+      const proj = targetPoint.clone();
+      proj.project(activeCam);
+      centerPixelX = Math.round((proj.x * 0.5 + 0.5) * canvasEl.width);
+      centerPixelY = Math.round((-proj.y * 0.5 + 0.5) * canvasEl.height);
+    } else {
+      centerPixelX = Math.round(canvasEl.width / 2);
+      centerPixelY = Math.round(canvasEl.height / 2);
+    }
+
+    centerPixelX = Math.max(0, Math.min(canvasEl.width, centerPixelX));
+    centerPixelY = Math.max(0, Math.min(canvasEl.height, centerPixelY));
+
     // 2. Force synchronous render frame WITHOUT HUD
-    const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
     if (STATE.dropInViewer && STATE.dropInViewer.viewer) {
       try {
         STATE.dropInViewer.viewer.update(renderer, activeCam);
@@ -4283,23 +4313,123 @@ function takeScreenshot({ targetPoint = null, crop = false, screenX = null, scre
     }
     renderer.render(scene, activeCam);
 
-    // 3. Extract snapshot data immediately while buffer is valid
+    // 3. Primary Extraction: Direct 2D canvas crop from canvasEl
     let dataUrl = null;
+    const targetCropSize = Math.max(256, Math.min(boxSize || 540, canvasEl.width, canvasEl.height));
+    const halfCrop = Math.floor(targetCropSize / 2);
+    const srcX = Math.max(0, Math.min(canvasEl.width - targetCropSize, centerPixelX - halfCrop));
+    const srcY = Math.max(0, Math.min(canvasEl.height - targetCropSize, centerPixelY - halfCrop));
+
     try {
-      dataUrl = canvasEl.toDataURL('image/jpeg', 0.85);
-    } catch (e) {
-      console.warn('[SpatialRaycast] canvas.toDataURL error:', e);
+      const cropCanvas = document.createElement('canvas');
+      cropCanvas.width = targetCropSize;
+      cropCanvas.height = targetCropSize;
+      const ctx = cropCanvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#07090e';
+        ctx.fillRect(0, 0, targetCropSize, targetCropSize);
+        ctx.drawImage(canvasEl, srcX, srcY, targetCropSize, targetCropSize, 0, 0, targetCropSize, targetCropSize);
+        const testUrl = cropCanvas.toDataURL('image/jpeg', 0.85);
+
+        if (testUrl && testUrl.length > 800) {
+          if (renderer.xr.isPresenting) {
+            // Verify that WebXR canvas buffer isn't completely black
+            const sample = ctx.getImageData(0, 0, Math.min(24, targetCropSize), Math.min(24, targetCropSize));
+            let nonZero = 0;
+            for (let i = 0; i < sample.data.length; i += 4) {
+              if (sample.data[i] > 10 || sample.data[i + 1] > 10 || sample.data[i + 2] > 10) {
+                nonZero++;
+              }
+            }
+            if (nonZero >= 2) {
+              dataUrl = testUrl;
+            } else {
+              console.warn('[SpatialRaycast] WebXR canvas drawImage returned black buffer; falling back to WebGLRenderTarget readPixels');
+            }
+          } else {
+            dataUrl = testUrl;
+          }
+        }
+      }
+    } catch (cropErr) {
+      console.warn('[SpatialRaycast] Primary canvas crop failed:', cropErr);
     }
 
-    // 4. Restore HUD immediately
+    // 4. Fallback Extraction: WebGLRenderTarget + readPixels for WebXR compatibility
+    if (!dataUrl) {
+      try {
+        console.log('[SpatialRaycast] Capturing WebXR scene via temporary WebGLRenderTarget + readPixels...');
+        const renderW = Math.min(1024, canvasEl.width || 1024);
+        const renderH = Math.min(1024, canvasEl.height || 1024);
+        const rt = new THREE.WebGLRenderTarget(renderW, renderH, {
+          format: THREE.RGBAFormat,
+          type: THREE.UnsignedByteType,
+        });
+
+        const prevTarget = renderer.getRenderTarget();
+        const prevXrEnabled = renderer.xr.enabled;
+
+        renderer.xr.enabled = false;
+        renderer.setRenderTarget(rt);
+        renderer.clear();
+
+        if (STATE.dropInViewer && STATE.dropInViewer.viewer) {
+          try { STATE.dropInViewer.viewer.update(renderer, activeCam); } catch (e) {}
+        }
+        renderer.render(scene, activeCam);
+
+        const pixels = new Uint8Array(renderW * renderH * 4);
+        renderer.readRenderTargetPixels(rt, 0, 0, renderW, renderH, pixels);
+
+        renderer.setRenderTarget(prevTarget);
+        renderer.xr.enabled = prevXrEnabled;
+        rt.dispose();
+
+        // Convert centerPixelX & centerPixelY to render target coordinates
+        const rtCenterX = Math.round((centerPixelX / canvasEl.width) * renderW);
+        const rtCenterY = Math.round((centerPixelY / canvasEl.height) * renderH);
+
+        const rtCropSize = Math.max(256, Math.min(boxSize || 512, renderW, renderH));
+        const rtHalfCrop = Math.floor(rtCropSize / 2);
+        const rtCropX = Math.max(0, Math.min(renderW - rtCropSize, rtCenterX - rtHalfCrop));
+        const rtCropY = Math.max(0, Math.min(renderH - rtCropSize, rtCenterY - rtHalfCrop));
+
+        const rtCanvas = document.createElement('canvas');
+        rtCanvas.width = rtCropSize;
+        rtCanvas.height = rtCropSize;
+        const rtCtx = rtCanvas.getContext('2d');
+        if (rtCtx) {
+          const rtImgData = rtCtx.createImageData(rtCropSize, rtCropSize);
+          for (let cy = 0; cy < rtCropSize; cy++) {
+            const dstOffset = cy * rtCropSize * 4;
+            // WebGL readPixels is bottom-to-top; flip Y for 2D canvas
+            const webglRow = (renderH - 1) - (rtCropY + cy);
+            const srcOffset = (webglRow * renderW + rtCropX) * 4;
+            rtImgData.data.set(pixels.subarray(srcOffset, srcOffset + rtCropSize * 4), dstOffset);
+          }
+          rtCtx.putImageData(rtImgData, 0, 0);
+          dataUrl = rtCanvas.toDataURL('image/jpeg', 0.85);
+        }
+      } catch (rtErr) {
+        console.error('[SpatialRaycast] WebGLRenderTarget readPixels fallback failed:', rtErr);
+      }
+    }
+
+    // 5. Restore HUD & reticle immediately
     if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
-    if (xrHudMesh) xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
+    if (xrHudMesh) {
+      if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
+      xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
+    }
 
     return dataUrl;
   } catch (err) {
     if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
-    if (xrHudMesh) xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
-    console.warn('[SpatialRaycast] takeScreenshot error:', err);
+    if (xrHudMesh) {
+      if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
+      xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
+    }
+    console.warn('[SpatialRaycast] takeScreenshot fatal error:', err);
     return null;
   }
 }
@@ -4670,6 +4800,24 @@ function performRaycastSelectionXR(origin, direction) {
     hitPoint = origin.clone().addScaledVector(direction, 2.2);
   }
 
+  // 3D to 2D Projection for XR Image Cropping:
+  // Project the 3D intersection point back onto the 2D screen space of the active XR camera
+  let screenX = null;
+  let screenY = null;
+  const canvasEl = renderer?.domElement || document.getElementById('webgl-canvas');
+  if (canvasEl && hitPoint) {
+    try {
+      const xrCam = renderer.xr.isPresenting ? renderer.xr.getCamera(camera) : camera;
+      const vector = hitPoint.clone();
+      vector.project(xrCam); // Get Normalized Device Coordinates (NDC) [-1, 1]
+      screenX = (vector.x * 0.5 + 0.5) * canvasEl.width;
+      screenY = (-vector.y * 0.5 + 0.5) * canvasEl.height;
+      console.log(`[SpatialRaycastXR] Projected 3D point (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}) to 2D canvas coordinates: [${screenX.toFixed(1)}, ${screenY.toFixed(1)}]`);
+    } catch (projErr) {
+      console.warn('[SpatialRaycastXR] Error calculating 3D->2D camera projection:', projErr);
+    }
+  }
+
   // 2. Immediate Raycast Visual Feedback:
   updateXRHUDContent({
     title: 'SCANNING OBJECT...',
@@ -4677,7 +4825,7 @@ function performRaycastSelectionXR(origin, direction) {
     status: 'Scanning object... Fetching data from Tavily.',
   });
 
-  triggerSpatialObjectInspection(hitPoint, null, null);
+  triggerSpatialObjectInspection(hitPoint, screenX, screenY);
 }
 
 // State Lock Watchdog to prevent permanent lockup if network/TTS stalls
@@ -4723,14 +4871,27 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
     raycastTargetMesh.visible = true;
   }
 
+  // Ensure screenX and screenY are available via 3D to 2D camera projection if not provided
+  if ((screenX == null || screenY == null) && hitPoint) {
+    try {
+      const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera(camera) : camera;
+      const canvasEl = renderer?.domElement || document.getElementById('webgl-canvas');
+      if (canvasEl && activeCam) {
+        const v = hitPoint.clone();
+        v.project(activeCam);
+        screenX = (v.x * 0.5 + 0.5) * canvasEl.width;
+        screenY = (-v.y * 0.5 + 0.5) * canvasEl.height;
+      }
+    } catch (e) {
+      console.warn('[SpatialRaycast] Projection calculation note:', e);
+    }
+  }
+
   // Show "Processing..." indicator in HUD & Desktop panel
   const emitterEl = document.getElementById('emitter-coords');
   if (emitterEl) {
     emitterEl.textContent = `Processing (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)})...`;
   }
-
-  // 1. Capture dedicated target-centered snapshot (mathematically locks hitPoint at exact center)
-  const imageBase64 = takeScreenshot({ targetPoint: hitPoint, crop: true, screenX, screenY, boxSize: 540 });
 
   showToast(`🎯 Object selected at (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}). Querying Vision RAG...`, 'info', 3000);
 
@@ -4751,6 +4912,26 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
 
   // Post loading card in chat
   const typingId = appendChatMessage('agent', '⏳ Processing: Capturing WebGL viewport crop, running Nemotron Vision identification & Tavily grounding...');
+
+  // 1. Capture dedicated target-centered snapshot (crops around projected coordinates)
+  let imageBase64 = null;
+  try {
+    imageBase64 = takeScreenshot({ targetPoint: hitPoint, crop: true, screenX, screenY, boxSize: 540 });
+    if (!imageBase64 || imageBase64.length < 500) {
+      throw new Error('Local snapshot generation failed or produced empty image data.');
+    }
+  } catch (snapErr) {
+    console.error('[SpatialRaycast] Local snapshot generation failed:', snapErr);
+    updateXRHUDContent({
+      title: 'ERROR',
+      subtitle: 'Image capture failed',
+      status: 'Error: Failed to capture object image.',
+    });
+    updateChatMessage(typingId, '⚠️ Error: Failed to capture object image.', []);
+    showToast('⚠️ Error: Failed to capture object image.', 'error', 3500);
+    unlockRaycastQuery();
+    return;
+  }
 
   try {
     const camPos = new THREE.Vector3();
