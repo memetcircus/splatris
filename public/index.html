@@ -490,21 +490,15 @@
             <line x1="8" y1="23" x2="16" y2="23"></line>
           </svg>
         </div>
-        <h2>Spatial Audio RAG</h2>
-        <span class="badge ai">Tavily + Nemotron</span>
-      </div>
-
-      <div class="panel-body">
-        <!-- Audio TTS Controls -->
-        <div class="audio-hud-card">
-          <div class="audio-hud-left">
-            <div id="audio-wave-anim" class="wave-visualizer">
-              <span></span><span></span><span></span><span></span><span></span>
-            </div>
-            <div class="audio-info">
-              <span id="emitter-coords" class="audio-pos" style="display: none;"></span>
-            </div>
+        <div class="panel-header-title-group">
+          <h2>Spatial Audio RAG</h2>
+          <span class="badge ai">Tavily + Nemotron</span>
+        </div>
+        <div class="audio-hud-actions">
+          <div id="audio-wave-anim" class="wave-visualizer" title="Spatial Audio Synthesizer">
+            <span></span><span></span><span></span><span></span><span></span>
           </div>
+          <span id="emitter-coords" class="audio-pos" style="display: none;"></span>
           <button id="btn-toggle-audio" class="btn-icon" title="Toggle Audio Synthesis">
             <svg id="icon-sound-on" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
               stroke-width="2">
@@ -513,6 +507,9 @@
             </svg>
           </button>
         </div>
+      </div>
+
+      <div class="panel-body">
 
         <!-- Quick Query Presets -->
         <div id="rag-presets" class="preset-chips">
@@ -739,7 +736,7 @@
     </div>
   </footer>
 
-  <script src="app.js?v=20261005_dedupe_recent_v12"></script>
+  <script src="app.js?v=20261005_merged_audio_header_v13"></script>
 </body>
 
 </html>

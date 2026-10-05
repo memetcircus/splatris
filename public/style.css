@@ -1489,21 +1489,55 @@ html, body {
   flex-shrink: 0;
 }
 
-/* Spatial Audio RAG Panel */
-.audio-hud-card {
+/* Spatial Audio RAG Panel Header */
+.panel-header-title-group {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: rgba(6, 182, 212, 0.05);
-  border: 1px solid rgba(6, 182, 212, 0.2);
-  border-radius: var(--radius-sm);
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
 }
 
-.audio-hud-left {
+.panel-header-title-group h2 {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  margin: 0;
+  line-height: 1.2;
+}
+
+.panel-header-title-group .badge.ai {
+  align-self: flex-start;
+  font-size: 0.65rem;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+
+.audio-hud-actions {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.audio-hud-actions .btn-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+  color: var(--cyan);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.audio-hud-actions .btn-icon:hover {
+  background: rgba(6, 182, 212, 0.25);
+  border-color: var(--cyan);
+  transform: scale(1.05);
 }
 
 .wave-visualizer {
