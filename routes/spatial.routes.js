@@ -390,11 +390,11 @@ router.get('/tts', async (req, res) => {
       return res.status(400).json({ error: 'Text query parameter is required.' });
     }
 
-    // Clean text: strip markdown symbols and limit to a concise narration sentence (max 160 chars for Google TTS)
+    // Clean text: strip markdown symbols and limit to a concise narration sentence (max 200 chars for Google TTS)
     const cleanText = rawText
       .replace(/[*_#`~[\]()]/g, ' ')
       .replace(/\s+/g, ' ')
-      .slice(0, 160)
+      .slice(0, 200)
       .trim();
 
     const ttsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=en&client=tw-ob`;

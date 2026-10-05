@@ -664,7 +664,7 @@ export async function resumeJob({ jobId, sceneId }) {
   }
 
   // Verify worker availability before resuming
-  const workerEndpoint = process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.112.102:8000';
+  const workerEndpoint = process.env.NEBIUS_GPU_ENDPOINT || 'http://89.169.112.193:8000';
   const cleanEndpoint = workerEndpoint.replace(/\/$/, '');
 
   try {

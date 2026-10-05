@@ -29,6 +29,38 @@ let pannerNode = null;
 let audioListener = null;
 let threeAudioListener = null;
 let isXrHudVisibleByUser = true;
+let globalTtsGainNode = null;
+let xrHudReticleMesh = null;
+let ttsGenerationId = 0;
+
+function fadeOutAndStopAudio(durationMs = 400) {
+  ttsPlaybackActive = false;
+  ttsSentenceQueue = [];
+  ttsCurrentSentenceIndex = 0;
+
+  if (audioCtx && globalTtsGainNode && audioCtx.currentTime) {
+    try {
+      const now = audioCtx.currentTime;
+      globalTtsGainNode.gain.setValueAtTime(globalTtsGainNode.gain.value, now);
+      globalTtsGainNode.gain.linearRampToValueAtTime(0.0001, now + (durationMs / 1000));
+    } catch (e) {
+      try {
+        globalTtsGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+      } catch (err) {}
+    }
+    setTimeout(() => {
+      stopSpatialAudio();
+      if (globalTtsGainNode && audioCtx) {
+        try {
+          globalTtsGainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
+        } catch (e) {}
+      }
+    }, durationMs + 50);
+    return;
+  }
+
+  stopSpatialAudio();
+}
 
 function initSpatialAudio() {
   if (threeAudioListener && audioCtx) return;
@@ -39,6 +71,12 @@ function initSpatialAudio() {
     }
     audioCtx = threeAudioListener.context;
     audioListener = threeAudioListener;
+
+    if (!globalTtsGainNode && audioCtx) {
+      globalTtsGainNode = audioCtx.createGain();
+      globalTtsGainNode.gain.setValueAtTime(1.0, audioCtx.currentTime);
+      globalTtsGainNode.connect(audioCtx.destination);
+    }
 
     if (!pannerNode && audioCtx) {
       pannerNode = audioCtx.createPanner();
@@ -208,35 +246,70 @@ if ('xr' in navigator) {
       window.speechSynthesis.resume();
     }
 
-    // Prevent multi-trigger API spam & pipeline lockup in WebXR mode
-    if (STATE.isRaycastQuerying) {
-      console.log('[Splatris] WebXR raycast trigger ignored: inspection query already in progress');
-      return;
-    }
-
     const controller = e.target;
+    let hand = controller.userData?.handedness;
+    if (!hand) {
+      const session = renderer.xr.getSession();
+      if (session && session.inputSources) {
+        for (const src of session.inputSources) {
+          if (src.targetRayMode === 'tracked-pointer') {
+            if (controller === controller0 && src.handedness) hand = src.handedness;
+            if (controller === controller1 && src.handedness) hand = src.handedness;
+          }
+        }
+      }
+    }
+    if (!hand) hand = (controller === controller0 ? 'left' : 'right');
+
     const tempMatrix = new THREE.Matrix4();
     tempMatrix.identity().extractRotation(controller.matrixWorld);
     const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
     const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
 
-    // Check in-VR HUD Exit Button
-    if (typeof checkXRExitButtonHit === 'function' && checkXRExitButtonHit(origin, direction)) {
+    // 1. LEFT CONTROLLER TRIGGER: Dedicated to choosing from the HUD panel (Mute toggle, Question buttons)
+    if (hand === 'left') {
+      if (typeof checkXRHudInteraction === 'function' && checkXRHudInteraction(origin, direction, true)) {
+        return;
+      }
+      console.log('[WebXR] Left controller trigger clicked outside HUD interactive buttons.');
       return;
     }
 
+    // 2. RIGHT CONTROLLER TRIGGER: Exclusively dedicated to 3D Scene Scanning / Tavily Grounding!
+    // (Left Trigger exclusively handles panel button selection)
+    // Cooldown check: 2.5 seconds debounce between scans to prevent multi-trigger spam
+    const now = Date.now();
+    if (STATE.lastTriggerScanTime && (now - STATE.lastTriggerScanTime < 2500)) {
+      console.log(`[WebXR] Right trigger scan ignored: Cooldown active (${Math.ceil((2500 - (now - STATE.lastTriggerScanTime)) / 1000)}s remaining)`);
+      return;
+    }
+
+    if (STATE.isRaycastQuerying) {
+      console.log('[WebXR] Right trigger scan ignored: Query already in progress');
+      return;
+    }
+
+    STATE.lastTriggerScanTime = now;
+    console.log('[WebXR] Right Point Trigger pulled: Scanning 3D target with Tavily & Nemotron...');
+
     if (typeof performRaycastSelectionXR === 'function') {
       performRaycastSelectionXR(origin, direction).catch((err) => {
-        console.error('[WebXR] onXRSelect error:', err);
+        console.error('[WebXR] Right trigger raycast error:', err);
         if (typeof unlockRaycastQuery === 'function') unlockRaycastQuery();
       });
     }
   };
+
+  let lastGripToggleTime = 0;
   const onXRSqueeze = (e) => {
+    const now = Date.now();
+    if (now - lastGripToggleTime < 400) return;
+    lastGripToggleTime = now;
+
     isXrHudVisibleByUser = !isXrHudVisibleByUser;
     if (xrHudMesh) {
       xrHudMesh.visible = isXrHudVisibleByUser;
-      console.log(`[WebXR] HUD toggled via grip button: visible=${isXrHudVisibleByUser}`);
+      console.log(`[WebXR] HUD toggled via Left/Right Grip: visible=${isXrHudVisibleByUser}`);
     }
   };
   controller0.addEventListener('connected', (e) => {
@@ -1285,6 +1358,53 @@ function animate() {
         xrHudMesh.quaternion.copy(camQuat);
       }
 
+      // 1.5 Update in-VR Laser Pointer Target Dot on HUD Panel (Shows where Left Controller is pointing)
+      if (xrHudMesh && xrHudMesh.visible && isXrHudVisibleByUser) {
+        const leftCtrl = (controller0 && controller0.userData && controller0.userData.handedness === 'left')
+          ? controller0
+          : ((controller1 && controller1.userData && controller1.userData.handedness === 'left') ? controller1 : controller0);
+
+        if (leftCtrl) {
+          const tempMatrix = new THREE.Matrix4();
+          tempMatrix.identity().extractRotation(leftCtrl.matrixWorld);
+          const origin = new THREE.Vector3().setFromMatrixPosition(leftCtrl.matrixWorld);
+          const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
+
+          const threeRaycaster = new THREE.Raycaster(origin, direction, 0.05, 10.0);
+          xrHudMesh.updateMatrixWorld(true);
+          const hits = threeRaycaster.intersectObject(xrHudMesh);
+
+          if (hits.length > 0) {
+            if (!xrHudReticleMesh) {
+              const reticleGeo = new THREE.RingGeometry(0.008, 0.018, 32);
+              const reticleMat = new THREE.MeshBasicMaterial({
+                color: 0x38bdf8,
+                side: THREE.DoubleSide,
+                transparent: true,
+                opacity: 0.95,
+                depthTest: false,
+                depthWrite: false,
+              });
+              xrHudReticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
+              xrHudReticleMesh.renderOrder = 1000;
+              scene.add(xrHudReticleMesh);
+            }
+            if (xrHudReticleMesh.parent !== scene) scene.add(xrHudReticleMesh);
+            xrHudReticleMesh.position.copy(hits[0].point);
+            xrHudReticleMesh.quaternion.copy(xrHudMesh.quaternion);
+            const normalOffset = new THREE.Vector3(0, 0, 0.003).applyQuaternion(xrHudMesh.quaternion);
+            xrHudReticleMesh.position.add(normalOffset);
+            xrHudReticleMesh.visible = true;
+          } else if (xrHudReticleMesh) {
+            xrHudReticleMesh.visible = false;
+          }
+        } else if (xrHudReticleMesh) {
+          xrHudReticleMesh.visible = false;
+        }
+      } else if (xrHudReticleMesh) {
+        xrHudReticleMesh.visible = false;
+      }
+
       // 2. Increase Camera Far Plane to 1000.0 so environment never clips out during room-scale walk
       camera.near = 0.01;
       camera.far = 1000.0;
@@ -1332,36 +1452,18 @@ function animate() {
           const axes = gp.axes || [];
           const btns = gp.buttons || [];
 
-          // Exit WebXR on Secondary Button (Button B on right controller or Button Y on left controller)
-          if (btns[5] && btns[5].pressed && !STATE.isExitingXR) {
+          const hand = source.handedness;
+          const deadzone = 0.15;
+
+          // Exit WebXR strictly on Button A (right controller) or Button X (left controller)
+          // No action is assigned to Button B or Button Y
+          if (btns[4]?.pressed && !STATE.isExitingXR) {
             STATE.isExitingXR = true;
+            console.log(`[WebXR] Exit button (${hand === 'left' ? 'X' : 'A'}) pressed: Fading audio and ending WebXR session...`);
+            fadeOutAndStopAudio(400);
             session.end().finally(() => { STATE.isExitingXR = false; });
             return;
           }
-
-          // Primary Button (Button A on right controller or Button X on left controller)
-          if (btns[4] && btns[4].pressed && !STATE.isRaycastQuerying && !STATE.xrBtn4Pressed) {
-            STATE.xrBtn4Pressed = true;
-            let activeCtrl = (controller0 && controller0.userData && controller0.userData.handedness === hand) ? controller0 : controller1;
-            if (!activeCtrl) activeCtrl = (hand === 'left' ? controller0 : controller1) || controller0;
-            if (activeCtrl) {
-              const tempMatrix = new THREE.Matrix4();
-              tempMatrix.identity().extractRotation(activeCtrl.matrixWorld);
-              const origin = new THREE.Vector3().setFromMatrixPosition(activeCtrl.matrixWorld);
-              const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
-              if (typeof performRaycastSelectionXR === 'function') {
-                performRaycastSelectionXR(origin, direction).catch((err) => {
-                  console.error('[WebXR] A/X button raycast error:', err);
-                  if (typeof unlockRaycastQuery === 'function') unlockRaycastQuery();
-                });
-              }
-            }
-          } else if (btns[4] && !btns[4].pressed) {
-            STATE.xrBtn4Pressed = false;
-          }
-
-          const hand = source.handedness;
-          const deadzone = 0.15;
 
           // Left Controller: Smooth Locomotion (move forward/backward & strafe)
           if (hand === 'left') {
@@ -3497,6 +3599,7 @@ if (btnWebXR) {
         }
 
         session.addEventListener('end', () => {
+          fadeOutAndStopAudio(400);
           window.__splatrisXrActive = false;
           controls.enabled = true;
           if (btnWebXR && btnWebXR.querySelector('span')) {
@@ -3523,6 +3626,15 @@ if (btnWebXR) {
             if (xrHudMesh.parent) {
               xrHudMesh.parent.remove(xrHudMesh);
             }
+          }
+          if (xrHudReticleMesh) {
+            xrHudReticleMesh.visible = false;
+            if (xrHudReticleMesh.parent) {
+              xrHudReticleMesh.parent.remove(xrHudReticleMesh);
+            }
+          }
+          if (lastHudContent) {
+            lastHudContent.questions = [];
           }
           if (threeAudioListener) {
             if (threeAudioListener.parent) {
@@ -3845,17 +3957,11 @@ window.addEventListener('keydown', (e) => {
     }
   } else if (e.key === 'x' || e.key === 'X') {
     if (renderer.xr && renderer.xr.isPresenting) {
-      const xrCam = renderer.xr.getCamera();
-      const origin = new THREE.Vector3();
-      const direction = new THREE.Vector3();
-      xrCam.getWorldPosition(origin);
-      xrCam.getWorldDirection(direction);
-      direction.normalize();
-      if (typeof performRaycastSelectionXR === 'function') {
-        performRaycastSelectionXR(origin, direction).catch((err) => {
-          console.error('[WebXR] keyboard X raycast error:', err);
-          if (typeof unlockRaycastQuery === 'function') unlockRaycastQuery();
-        });
+      // Exit WebXR on keyboard X (matches VR controller X button)
+      const session = renderer.xr.getSession();
+      if (session) {
+        console.log('[WebXR] Keyboard X pressed: Exiting WebXR session...');
+        session.end();
       }
     } else {
       const mouseNdc = new THREE.Vector2(0, 0);
@@ -3883,13 +3989,26 @@ const chatLog = document.getElementById('rag-chat-log');
 const waveAnim = document.getElementById('audio-wave-anim');
 const btnToggleAudio = document.getElementById('btn-toggle-audio');
 
+function toggleAudioMute() {
+  STATE.audioEnabled = !STATE.audioEnabled;
+  console.log(`[Audio] Audio mute toggled: audioEnabled=${STATE.audioEnabled}`);
+  if (!STATE.audioEnabled) {
+    stopSpatialAudio();
+  }
+  const btn = document.getElementById('btn-toggle-audio');
+  if (btn) {
+    btn.style.opacity = STATE.audioEnabled ? '1' : '0.4';
+    btn.setAttribute('title', STATE.audioEnabled ? 'Mute Audio' : 'Unmute Audio');
+  }
+  // Re-render in-VR HUD immediately to swap speaker icon (🔊 <-> 🔇)
+  if (typeof updateXRHUDContent === 'function') {
+    updateXRHUDContent();
+  }
+}
+
 if (btnToggleAudio) {
   btnToggleAudio.addEventListener('click', () => {
-    STATE.audioEnabled = !STATE.audioEnabled;
-    btnToggleAudio.style.opacity = STATE.audioEnabled ? '1' : '0.4';
-    if (!STATE.audioEnabled) {
-      stopSpatialAudio();
-    }
+    toggleAudioMute();
   });
 }
 
@@ -3951,6 +4070,15 @@ async function submitRagQuery(query) {
 
     updateChatMessage(typingId, data.answer, data.sources, data.groundingUsed);
 
+    if (renderer.xr && renderer.xr.isPresenting) {
+      updateXRHUDContent({
+        title: (STATE.lastInspectedObject?.objectName || 'AI KNOWLEDGE').toUpperCase(),
+        subtitle: query,
+        status: data.answer,
+        questions: lastHudContent?.questions || [],
+      });
+    }
+
     if (data.audioSpatialPosition) {
       const pos = data.audioSpatialPosition;
       updateSpatialEmitterPosition(pos.x || 0, pos.y || 1.2, pos.z || -2.0);
@@ -3962,6 +4090,14 @@ async function submitRagQuery(query) {
   } catch (err) {
     console.error('RAG query error:', err);
     updateChatMessage(typingId, `Spatial AI Guide temporarily unavailable: ${err.message}`, []);
+    if (renderer.xr && renderer.xr.isPresenting) {
+      updateXRHUDContent({
+        title: 'QUERY ERROR',
+        subtitle: query,
+        status: `Error: ${err.message}. Please try choosing another question with Left Trigger.`,
+        questions: lastHudContent?.questions || [],
+      });
+    }
   }
 }
 
@@ -4044,6 +4180,7 @@ let ttsBlockedWatchdog = null;
  * Stops ongoing spatial speech and resets sentence queue & visual emitter.
  */
 function stopSpatialAudio() {
+  ttsGenerationId++;
   ttsPlaybackActive = false;
   ttsSentenceQueue = [];
   ttsCurrentSentenceIndex = 0;
@@ -4080,16 +4217,17 @@ function stopSpatialAudio() {
 
 /**
  * Sequentially triggers the next sentence in the queue.
- * Each sentence gets a new SpeechSynthesisUtterance, chained via onend.
+ * Streams each sentence chunk via Web Audio /api/spatial/tts, seamlessly chained via onended.
  */
-function playNextTtsSentenceInQueue() {
+async function playNextTtsSentenceInQueue() {
+  const currentGen = ttsGenerationId;
   if (!ttsPlaybackActive) {
     stopSpatialAudio();
     return;
   }
 
   if (ttsCurrentSentenceIndex >= ttsSentenceQueue.length) {
-    console.log(`[SpatialTTS] Finished reading all ${ttsSentenceQueue.length} sentences successfully.`);
+    console.log(`[AudioTTS] Finished reading all ${ttsSentenceQueue.length} sentences successfully.`);
     const finish = ttsActiveFinishCallback;
     stopSpatialAudio();
     if (typeof finish === 'function') {
@@ -4099,52 +4237,89 @@ function playNextTtsSentenceInQueue() {
   }
 
   const sentence = ttsSentenceQueue[ttsCurrentSentenceIndex];
-  console.log(`[SpatialTTS] Speaking sentence ${ttsCurrentSentenceIndex + 1}/${ttsSentenceQueue.length}: "${sentence}"`);
+  console.log(`[AudioTTS] Speaking sentence ${ttsCurrentSentenceIndex + 1}/${ttsSentenceQueue.length}: "${sentence}"`);
 
+  // 1. Try Web Audio API streaming via /api/spatial/tts (Works in WebXR & Desktop)
   try {
-    const utterance = new SpeechSynthesisUtterance(sentence);
-    utterance.rate = 1.03;
-    utterance.pitch = 1.0;
-    utterance.lang = 'en-US';
-
-    // Retain global reference so V8 does not garbage collect it mid-playback
-    activeUtterance = utterance;
-
-    utterance.onstart = () => {
-      ttsPlaybackStarted = true;
-      if (ttsBlockedWatchdog) {
-        clearTimeout(ttsBlockedWatchdog);
-        ttsBlockedWatchdog = null;
+    initSpatialAudio();
+    const ctx = audioCtx || (threeAudioListener && threeAudioListener.context);
+    if (ctx) {
+      if (ctx.state === 'suspended') {
+        await ctx.resume().catch(() => {});
       }
-      if (waveAnim) waveAnim.classList.add('active');
-    };
+      const res = await fetch(`/api/spatial/tts?text=${encodeURIComponent(sentence)}`);
+      if (currentGen !== ttsGenerationId || !ttsPlaybackActive) return;
 
-    utterance.onend = () => {
-      if (!ttsPlaybackActive) return;
-      // Instantly advance to the next sentence in the queue
-      ttsCurrentSentenceIndex++;
-      playNextTtsSentenceInQueue();
-    };
+      if (res.ok) {
+        const arrayBuf = await res.arrayBuffer();
+        if (currentGen !== ttsGenerationId || !ttsPlaybackActive) return;
 
-    utterance.onerror = (event) => {
-      console.warn(`[SpatialTTS] Sentence ${ttsCurrentSentenceIndex + 1} playback notice:`, event?.error);
-      if (event?.error && event.error !== 'interrupted' && event.error !== 'canceled') {
-        prependAudioBlockedToHud();
+        const audioBuf = await ctx.decodeAudioData(arrayBuf);
+        if (currentGen !== ttsGenerationId || !ttsPlaybackActive) return;
+
+        const sourceNode = ctx.createBufferSource();
+        sourceNode.buffer = audioBuf;
+        if (!globalTtsGainNode) {
+          globalTtsGainNode = ctx.createGain();
+          globalTtsGainNode.gain.setValueAtTime(1.0, ctx.currentTime);
+          globalTtsGainNode.connect(ctx.destination);
+        }
+        globalTtsGainNode.gain.setValueAtTime(1.0, ctx.currentTime);
+        sourceNode.connect(globalTtsGainNode);
+        activeSpatialAudioSource = sourceNode;
+
+        if (waveAnim) waveAnim.classList.add('active');
+
+        sourceNode.onended = () => {
+          if (activeSpatialAudioSource === sourceNode) {
+            activeSpatialAudioSource = null;
+          }
+          if (!ttsPlaybackActive) return;
+          ttsCurrentSentenceIndex++;
+          playNextTtsSentenceInQueue();
+        };
+
+        sourceNode.start(0);
+        return;
       }
-      if (!ttsPlaybackActive) return;
-      ttsCurrentSentenceIndex++;
-      playNextTtsSentenceInQueue();
-    };
-
-    // Unpause if browser speech engine is suspended
-    if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
     }
-
-    window.speechSynthesis.speak(utterance);
   } catch (err) {
-    console.warn('[SpatialTTS] Error synthesizing sentence:', err);
-    prependAudioBlockedToHud();
+    console.warn(`[AudioTTS] Web Audio error on sentence ${ttsCurrentSentenceIndex + 1}:`, err.message);
+  }
+
+  // 2. Fallback to desktop SpeechSynthesis if Web Audio stream fails and not in WebXR
+  if ((!renderer.xr || !renderer.xr.isPresenting) && 'speechSynthesis' in window) {
+    try {
+      const utterance = new SpeechSynthesisUtterance(sentence);
+      utterance.rate = 1.03;
+      utterance.lang = 'en-US';
+      activeUtterance = utterance;
+
+      utterance.onstart = () => {
+        if (waveAnim) waveAnim.classList.add('active');
+      };
+      utterance.onend = () => {
+        if (!ttsPlaybackActive) return;
+        activeUtterance = null;
+        ttsCurrentSentenceIndex++;
+        playNextTtsSentenceInQueue();
+      };
+      utterance.onerror = () => {
+        if (!ttsPlaybackActive) return;
+        activeUtterance = null;
+        ttsCurrentSentenceIndex++;
+        playNextTtsSentenceInQueue();
+      };
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+      window.speechSynthesis.speak(utterance);
+      return;
+    } catch (e) {}
+  }
+
+  // 3. If both failed, advance to next sentence
+  if (ttsPlaybackActive) {
     ttsCurrentSentenceIndex++;
     playNextTtsSentenceInQueue();
   }
@@ -4159,57 +4334,26 @@ async function speakSpatialAudio(text, position, onComplete) {
     return;
   }
 
-  initSpatialAudio();
-
-  // 2. Position spatial 3D audio panner & visual emitter at the target object coordinates
-  if (position && typeof position.x === 'number') {
-    updateSpatialEmitterPosition(position.x, position.y, position.z);
+  // If user muted audio, do not synthesize
+  if (!STATE.audioEnabled) {
+    if (typeof onComplete === 'function') onComplete();
+    return;
   }
 
-  // 3. Play acoustic beacon feedback chime emanating directly from the object
-  triggerSpatialChime(560, 0.3);
-
-  // 4. Split incoming text into an array of smaller sentence chunks (Queue System)
+  // 2. Split incoming text into an array of smaller sentence chunks (Queue System)
   const sentences = splitTextIntoSentences(text);
   if (sentences.length === 0) {
     if (typeof onComplete === 'function') onComplete();
     return;
   }
 
-  console.log(`[SpatialTTS] Queued ${sentences.length} sentences for sequential spatial playback.`);
-
-  if (!('speechSynthesis' in window)) {
-    console.warn('[SpatialTTS] SpeechSynthesis API unavailable in this browser.');
-    prependAudioBlockedToHud();
-    if (typeof onComplete === 'function') onComplete();
-    return;
-  }
+  console.log(`[AudioTTS] Queued ${sentences.length} sentences for complete multi-sentence playback.`);
 
   ttsSentenceQueue = sentences;
   ttsCurrentSentenceIndex = 0;
   ttsPlaybackActive = true;
   ttsActiveFinishCallback = onComplete;
 
-  // 4. Audio Fallback Watchdog: If browser blocks window.speechSynthesis inside WebXR
-  ttsPlaybackStarted = false;
-  if (ttsBlockedWatchdog) clearTimeout(ttsBlockedWatchdog);
-  ttsBlockedWatchdog = setTimeout(() => {
-    if (ttsPlaybackActive && !ttsPlaybackStarted && (!window.speechSynthesis || !window.speechSynthesis.speaking)) {
-      console.warn('[SpatialTTS] Speech synthesis detected blocked by browser policy in WebXR.');
-      prependAudioBlockedToHud();
-    }
-  }, 2200);
-
-  // 5. Chrome watchdog timer: prevents background suspension during long multi-sentence playback
-  if (ttsHeartbeatTimer) clearInterval(ttsHeartbeatTimer);
-  ttsHeartbeatTimer = setInterval(() => {
-    if (ttsPlaybackActive && 'speechSynthesis' in window && window.speechSynthesis.speaking) {
-      window.speechSynthesis.pause();
-      window.speechSynthesis.resume();
-    }
-  }, 10000);
-
-  // 6. Begin sequential sentence queue playback
   playNextTtsSentenceInQueue();
 }
 
@@ -4545,7 +4689,12 @@ function performRaycastSelection(mouseNdc, screenX, screenY) {
 let xrHudMesh = null;
 let xrHudCanvas = null;
 let xrHudTexture = null;
-let lastHudContent = { title: '', subtitle: '', status: '' };
+let lastHudContent = {
+  title: 'SPLATRIS WEBXR',
+  subtitle: 'Spatial AI Analysis • Point & Pull Trigger',
+  status: '',
+  questions: [],
+};
 
 function prependAudioBlockedToHud() {
   if (lastHudContent && lastHudContent.status) {
@@ -4592,8 +4741,20 @@ function createXRInWorldHUD() {
   return xrHudMesh;
 }
 
-function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = '' } = {}) {
-  lastHudContent = { title, subtitle, status };
+function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
+  if (title !== undefined || subtitle !== undefined || status !== undefined || questions !== undefined) {
+    lastHudContent = {
+      title: title !== undefined ? title : (lastHudContent?.title || 'SPLATRIS WEBXR'),
+      subtitle: subtitle !== undefined ? subtitle : (lastHudContent?.subtitle || ''),
+      status: status !== undefined ? status : (lastHudContent?.status || ''),
+      questions: questions !== undefined ? questions : (lastHudContent?.questions || []),
+    };
+  }
+  const displayTitle = lastHudContent.title || 'SPLATRIS WEBXR';
+  const displaySubtitle = lastHudContent.subtitle || '';
+  const displayStatus = lastHudContent.status || '';
+  const displayQuestions = lastHudContent.questions || [];
+
   if (!xrHudCanvas || !xrHudTexture || !xrHudMesh) return;
 
   const W = 1024;
@@ -4622,61 +4783,131 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
 
   // Header Title
   ctx.fillStyle = '#38bdf8';
-  ctx.font = 'bold 36px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  const cleanTitle = (title || 'SPLATRIS WEBXR').slice(0, 36);
-  ctx.fillText(cleanTitle, paddingX, 80);
+  let titleFont = 34;
+  ctx.font = `bold ${titleFont}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  while (ctx.measureText(displayTitle).width > (W - 220) && titleFont > 22) {
+    titleFont -= 2;
+    ctx.font = `bold ${titleFont}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  }
+  ctx.fillText(displayTitle, paddingX, 78);
 
-  // Status green pulse dot
-  ctx.fillStyle = '#10b981';
+  // Interactive Speaker / Mute Toggle Button in Top-Right
+  const muteBtnX = W - 144;
+  const muteBtnY = 36;
+  const muteBtnW = 96;
+  const muteBtnH = 64;
+  ctx.fillStyle = STATE.audioEnabled ? 'rgba(16, 185, 129, 0.22)' : 'rgba(239, 68, 68, 0.22)';
   ctx.beginPath();
-  ctx.arc(W - 60, 68, 14, 0, Math.PI * 2);
+  if (typeof ctx.roundRect === 'function') {
+    ctx.roundRect(muteBtnX, muteBtnY, muteBtnW, muteBtnH, 16);
+  } else {
+    ctx.rect(muteBtnX, muteBtnY, muteBtnW, muteBtnH);
+  }
   ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = STATE.audioEnabled ? '#10b981' : '#ef4444';
+  ctx.stroke();
 
-  // Subtitle / category
-  if (subtitle) {
+  ctx.font = '32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(STATE.audioEnabled ? '🔊' : '🔇', muteBtnX + (muteBtnW / 2), muteBtnY + (muteBtnH / 2));
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+
+  // Subtitle / Chosen Question Header - Full Multi-Line Wrapping (Never sliced or cut off)
+  let subtitleEndY = 95;
+  if (displaySubtitle) {
     ctx.fillStyle = '#06b6d4';
-    ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText(subtitle.slice(0, 56), paddingX, 130);
+    ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+    const isQuestion = displaySubtitle.includes('?');
+    const prefix = isQuestion && !displaySubtitle.toLowerCase().startsWith('q:') ? 'Q: ' : '';
+    const fullSubText = prefix + displaySubtitle;
+
+    const subWords = fullSubText.split(' ');
+    const subLines = [];
+    let currentSubLine = '';
+    for (const w of subWords) {
+      const test = currentSubLine ? `${currentSubLine} ${w}` : w;
+      if (ctx.measureText(test).width <= maxTextWidth) {
+        currentSubLine = test;
+      } else {
+        if (currentSubLine) subLines.push(currentSubLine);
+        currentSubLine = w;
+      }
+    }
+    if (currentSubLine) subLines.push(currentSubLine);
+
+    let subY = 125;
+    for (const sLine of subLines) {
+      ctx.fillText(sLine, paddingX, subY);
+      subY += 28;
+    }
+    subtitleEndY = subY;
   }
 
-  // Measure and wrap lines
-  ctx.font = '26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  let lines = [];
-  if (status) {
-    const rawParagraphs = status.split('\n');
-    for (const paragraph of rawParagraphs) {
-      if (!paragraph.trim()) {
-        lines.push('');
-        continue;
-      }
-      const rawWords = paragraph.replace(/[*_#`~[\]()]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
-      let currentLine = '';
-      for (const w of rawWords) {
-        const testLine = currentLine ? `${currentLine} ${w}` : w;
-        if (ctx.measureText(testLine).width <= maxTextWidth) {
-          currentLine = testLine;
-        } else {
-          if (currentLine) lines.push(currentLine);
-          currentLine = w;
+  // Measure and wrap lines with adaptive sizing so no response text is stripped
+  let fontSize = 23;
+  let lineHeight = 31;
+  const maxY = (displayQuestions && displayQuestions.length > 0) ? 685 : (H - 50);
+  const startY = displaySubtitle ? (subtitleEndY + 12) : 135;
+  const availableHeight = maxY - startY;
+
+  function computeWrappedLines(size) {
+    ctx.font = `${size}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    const wrapped = [];
+    if (displayStatus) {
+      const rawParagraphs = displayStatus.split('\n');
+      for (const paragraph of rawParagraphs) {
+        if (!paragraph.trim()) {
+          wrapped.push('');
+          continue;
         }
+        const rawWords = paragraph.replace(/[*_#`~[\]()]/g, ' ').replace(/\s+/g, ' ').trim().split(' ');
+        let currentLine = '';
+        for (const w of rawWords) {
+          const testLine = currentLine ? `${currentLine} ${w}` : w;
+          if (ctx.measureText(testLine).width <= maxTextWidth) {
+            currentLine = testLine;
+          } else {
+            if (currentLine) wrapped.push(currentLine);
+            currentLine = w;
+          }
+        }
+        if (currentLine) wrapped.push(currentLine);
       }
-      if (currentLine) lines.push(currentLine);
+    } else {
+      wrapped.push(
+        '👉 Pull RIGHT Trigger to scan target objects.',
+        '👈 Pull LEFT Trigger on panel buttons to choose.',
+        '✊ Squeeze Left/Right GRIP to open/close panel.',
+        '🚪 Press [ A or X ] to Exit WebXR.',
+        '',
+        '🕹️ Left Stick: Move & Glide | Right Stick: Turn',
+      );
     }
-  } else {
-    lines = [
-      'Press Grip button to hide/show panel.',
-      'Pull Trigger or Press [X / A] to scan.',
-      '',
-      '🕹️ Left Stick: Move & Glide into Scene',
-      '🔄 Right Stick: Turn & Fly Up / Down',
-    ];
+    return wrapped;
+  }
+
+  let lines = computeWrappedLines(fontSize);
+  // Adaptively adjust line height and font if response text is long, so the entire answer fits
+  if (lines.length * lineHeight > availableHeight && fontSize > 19) {
+    fontSize = 19;
+    lineHeight = 26;
+    lines = computeWrappedLines(fontSize);
+  }
+  if (lines.length * lineHeight > availableHeight && fontSize > 16) {
+    fontSize = 17;
+    lineHeight = 22;
+    lines = computeWrappedLines(fontSize);
   }
 
   // Draw lines with vertical spacing
   ctx.fillStyle = '#e2e8f0';
-  const lineHeight = 38;
-  let curY = subtitle ? 180 : 140;
-  const maxY = H - 120;
+  ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  let curY = startY;
   for (const line of lines) {
     if (curY > maxY) break;
     if (line) {
@@ -4685,48 +4916,122 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
     curY += lineHeight;
   }
 
-  // Exit Button Badge at bottom
-  const btnY = H - 90;
-  ctx.fillStyle = 'rgba(239, 68, 68, 0.28)';
-  ctx.beginPath();
-  if (typeof ctx.roundRect === 'function') {
-    ctx.roundRect(paddingX, btnY, W - (paddingX * 2), 60, 16);
-  } else {
-    ctx.rect(paddingX, btnY, W - (paddingX * 2), 60);
-  }
-  ctx.fill();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = '#ef4444';
-  ctx.stroke();
+  // Draw 2 or 3 interactive question buttons at the bottom if questions exist
+  if (displayQuestions && displayQuestions.length > 0) {
+    const numQ = Math.min(displayQuestions.length, 3);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText('💡 RELATED QUESTIONS (Point & Pull Left Trigger):', paddingX, 696);
 
-  ctx.fillStyle = '#ffffff';
-  ctx.font = 'bold 24px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('🚪 Click or Press [ B / Y ] to Exit WebXR', W / 2, btnY + 38);
-  ctx.textAlign = 'left';
+    for (let i = 0; i < numQ; i++) {
+      const qY = 712 + (i * 92);
+      const qH = 78;
+      const qText = displayQuestions[i];
+
+      // Glassmorphic Question Card
+      ctx.fillStyle = 'rgba(6, 182, 212, 0.16)';
+      ctx.beginPath();
+      if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(paddingX, qY, maxTextWidth, qH, 14);
+      } else {
+        ctx.rect(paddingX, qY, maxTextWidth, qH);
+      }
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#06b6d4';
+      ctx.stroke();
+
+      // Card Text - Full Multi-Line Wrap (NEVER stripped or truncated)
+      ctx.fillStyle = '#f8fafc';
+      ctx.font = 'bold 19px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+
+      const qWords = qText.split(' ');
+      let line1 = '💬 ';
+      let line2 = '';
+      for (const w of qWords) {
+        if (!line2 && ctx.measureText(line1 + ' ' + w).width < maxTextWidth - 40) {
+          line1 += (line1 === '💬 ' ? '' : ' ') + w;
+        } else {
+          line2 += (line2 ? ' ' : '') + w;
+        }
+      }
+      if (line2) {
+        ctx.fillText(line1, paddingX + 20, qY + 32);
+        ctx.fillText(line2, paddingX + 46, qY + 58);
+      } else {
+        ctx.fillText(line1, paddingX + 20, qY + 46);
+      }
+    }
+  }
 
   // Mark texture as updated with zero dimension changes
   xrHudTexture.needsUpdate = true;
 }
 
-function checkXRExitButtonHit(origin, direction) {
+function selectXRQuestion(index) {
+  if (!lastHudContent.questions || !lastHudContent.questions[index]) return;
+  const q = lastHudContent.questions[index];
+  console.log(`[WebXR] Question ${index + 1} selected via Left Trigger: "${q}"`);
+
+  // Stop any currently playing audio immediately so voices never overlap!
+  stopSpatialAudio();
+
+  // Update HUD text immediately to indicate query in progress
+  updateXRHUDContent({
+    title: (STATE.lastInspectedObject?.objectName || 'SPATIAL RAG').toUpperCase(),
+    subtitle: q,
+    status: `Analyzing: "${q}" with Nemotron & Tavily...`,
+    questions: lastHudContent.questions,
+  });
+
+  submitRagQuery(q).catch((err) => {
+    console.error('[WebXR] Question query error:', err);
+  });
+}
+
+function checkXRHudInteraction(origin, direction, isLeftHand = true) {
   if (!renderer.xr.isPresenting || !xrHudMesh || !xrHudMesh.visible) return false;
   xrHudMesh.updateMatrixWorld(true);
   const threeRaycaster = new THREE.Raycaster(origin, direction, 0.05, 10.0);
   const hits = threeRaycaster.intersectObject(xrHudMesh);
   if (hits.length > 0) {
     const uv = hits[0].uv;
-    // In Three.js plane UVs, y goes from 0 at the bottom to 1 at the top.
-    // Exit button occupies bottom ~12% of the canvas.
-    if (uv && uv.y < 0.12) {
-      console.log(`[Splatris] In-VR Exit HUD clicked (uv.y=${uv.y.toFixed(2)}): Ending WebXR session...`);
-      const session = renderer.xr.getSession();
-      if (session) {
-        session.end();
-        return true;
+    if (!uv) return false;
+
+    // 1. Mute Toggle Button in Top-Right Corner (uv.x >= 0.80 and uv.y >= 0.85)
+    if (uv.x >= 0.80 && uv.y >= 0.85) {
+      console.log(`[Splatris] In-VR HUD Speaker clicked (uv.x=${uv.x.toFixed(2)}, uv.y=${uv.y.toFixed(2)}): Toggling Mute...`);
+      toggleAudioMute();
+      return true;
+    }
+
+    // 2. Questions on HUD (Point with Left Controller & Pull Left Trigger)
+    if (isLeftHand && lastHudContent.questions && lastHudContent.questions.length > 0) {
+      if (uv.x >= 0.04 && uv.x <= 0.96) {
+        if (uv.y >= 0.22 && uv.y <= 0.31 && lastHudContent.questions[0]) {
+          selectXRQuestion(0);
+          return true;
+        }
+        if (uv.y >= 0.13 && uv.y < 0.22 && lastHudContent.questions[1]) {
+          selectXRQuestion(1);
+          return true;
+        }
+        if (uv.y >= 0.04 && uv.y < 0.13 && lastHudContent.questions[2]) {
+          selectXRQuestion(2);
+          return true;
+        }
       }
     }
+
+    // If left hand points at the HUD panel, absorb click so it doesn't pass through
+    if (isLeftHand) return true;
+
+    return false;
   }
+  return false;
+}
+
+function checkXRExitButtonHit(origin, direction) {
   return false;
 }
 
@@ -5014,24 +5319,33 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY, explic
       updateQueryChipsForObject(res.objectName);
     }
 
-    // In WebXR: Update floating HUD with object name and concise summary
+    // In WebXR: Update floating HUD with object name, concise summary, and 2-3 related questions
     const summaryText = res.tavilyData?.summary || res.tavilyGrounding?.summary || res.visualDescription || '';
+    const objName = res.objectName || targetObjectName || 'Tank';
+    let questions = [];
+    if (res.tavilyData?.suggestedQuestions && res.tavilyData.suggestedQuestions.length > 0) {
+      questions = res.tavilyData.suggestedQuestions.slice(0, 3);
+    } else {
+      questions = [
+        `What is the combat history of this ${objName}?`,
+        `What are the technical armor specs of this ${objName}?`,
+        `When and where was this ${objName} produced?`
+      ];
+    }
+
     updateXRHUDContent({
       title: (res.objectName || 'OBJECT IDENTIFIED').toUpperCase(),
       subtitle: `${res.category || 'Spatial Element'} • ${Math.round((res.confidence || 0.95) * 100)}% Match`,
       status: summaryText,
+      questions: questions,
     });
 
-    // In WebXR: Release query lock immediately so user can scan again without waiting.
-    // NEVER call window.speechSynthesis in WebXR (blocked by browser policy and causes freeze/errors).
-    if (!isInVR && STATE.audioEnabled) {
+    // Automatically read summary using Web Audio TTS stream (works in WebXR on Meta Quest & Desktop)
+    if (STATE.audioEnabled) {
       const speechText = `${res.objectName}. ${summaryText}`;
-      speakSpatialAudio(speechText, hitPoint, () => {
-        unlockRaycastQuery();
-      });
-    } else {
-      unlockRaycastQuery();
+      speakSpatialAudio(speechText, hitPoint);
     }
+    unlockRaycastQuery();
   } catch (err) {
     console.error('[Splatris] Raycast inspection error:', err);
     const errorMsg = 'Error: Scan failed. Try again.';

@@ -25,9 +25,9 @@ async function searchTavily(query) {
       body: JSON.stringify({
         api_key: apiKey,
         query,
-        search_depth: 'basic',
+        search_depth: 'advanced',
         include_answer: true,
-        max_results: 3,
+        max_results: 5,
       }),
     });
 
@@ -100,9 +100,9 @@ Spatial Context:
 ${groundingPrompt}
 
 Instructions:
-1. Provide a comprehensive, accurate response tailored to the 3D scene, the identified 3D object, and the user's spatial question.
+1. Provide a comprehensive, accurate, and complete response tailored to the 3D scene, the identified 3D object, and the user's spatial question. Do NOT truncate or trail off with ellipses (...).
 2. Directly answer specific questions about the object's model, era, history, engineering, or visual features using the identified object context and grounding information.
-3. Structure the answer so it sounds articulate, concise, and natural when synthesized through 3D spatial audio.
+3. Structure the answer so it sounds articulate, thorough, and natural when synthesized through 3D spatial audio.
 4. Determine optimal 3D coordinates (x, y, z) for the spatial audio sound emitter in the scene (e.g. at the focal point or object of interest).
 5. Output strictly a JSON object with:
 {
