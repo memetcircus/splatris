@@ -126,7 +126,7 @@ renderer.toneMappingExposure = 1.1;
 // --- WebXR Mobile VR (Meta Quest 3 Jitter Fix) Layer Optimizations ---
 if (typeof window !== 'undefined' && 'XRWebGLLayer' in window) {
   const NativeXRWebGLLayer = window.XRWebGLLayer;
-  window.XRWebGLLayer = function(session, gl, options = {}) {
+  window.XRWebGLLayer = function (session, gl, options = {}) {
     // 1. Lower framebuffer scale factor to 0.7 (stereo fill-rate bottleneck fix)
     // 3. Disable MSAA / anti-aliasing during VR presentation
     const xrOptimizedOptions = Object.assign({}, options, {
@@ -175,6 +175,15 @@ if ('xr' in navigator) {
   cameraRig.add(controller0);
   cameraRig.add(controller1);
 
+  controller0.addEventListener('connected', (event) => {
+    controller0.userData.handedness = event.data.handedness;
+    controller0.userData.inputSource = event.data;
+  });
+  controller1.addEventListener('connected', (event) => {
+    controller1.userData.handedness = event.data.handedness;
+    controller1.userData.inputSource = event.data;
+  });
+
   const rayGeo = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(0, 0, 0),
     new THREE.Vector3(0, 0, -2.5),
@@ -186,7 +195,7 @@ if ('xr' in navigator) {
   const onXRSelectStart = (e) => {
     if (typeof THREE !== 'undefined' && THREE.AudioContext && THREE.AudioContext.getContext) {
       if (THREE.AudioContext.getContext().state === 'suspended') {
-        THREE.AudioContext.getContext().resume().catch(() => {});
+        THREE.AudioContext.getContext().resume().catch(() => { });
       }
     }
   };
@@ -195,7 +204,7 @@ if ('xr' in navigator) {
     // Explicitly resume audio context inside VR session to guarantee the context remains active
     if (typeof THREE !== 'undefined' && THREE.AudioContext && THREE.AudioContext.getContext) {
       if (THREE.AudioContext.getContext().state === 'suspended') {
-        THREE.AudioContext.getContext().resume().catch(() => {});
+        THREE.AudioContext.getContext().resume().catch(() => { });
       }
     }
     initSpatialAudio();
@@ -208,44 +217,31 @@ if ('xr' in navigator) {
       window.speechSynthesis.resume();
     }
 
-    // Prevent multi-trigger API spam & pipeline lockup in WebXR mode
-    if (STATE.isRaycastQuerying) {
-      console.log('[Splatris] WebXR raycast trigger ignored: inspection query already in progress');
-      return;
-    }
-
     const controller = e.target;
     const tempMatrix = new THREE.Matrix4();
     tempMatrix.identity().extractRotation(controller.matrixWorld);
     const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
     const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
 
-    // Check in-VR HUD Exit Button
+    // Trigger is STRICTLY reserved for UI interaction (In-VR HUD Exit Button)
+    // RAG activation is mapped to 'A' or 'X' button via Gamepad API in the render loop.
     if (typeof checkXRExitButtonHit === 'function' && checkXRExitButtonHit(origin, direction)) {
       return;
     }
-
-    if (typeof performRaycastSelectionXR === 'function') {
-      performRaycastSelectionXR(origin, direction);
-    }
   };
-  let lastHudSqueezeTime = 0;
-  window.toggleXrHudVisibility = () => {
-    const now = Date.now();
-    if (now - lastHudSqueezeTime < 350) return;
-    lastHudSqueezeTime = now;
+  const onXRSqueeze = (e) => {
+    isXrHudVisibleByUser = !isXrHudVisibleByUser;
     if (xrHudMesh) {
-      xrHudMesh.visible = !xrHudMesh.visible;
-      isXrHudVisibleByUser = xrHudMesh.visible;
-      console.log(`[WebXR] HUD toggled via grip button: visible=${xrHudMesh.visible}`);
+      xrHudMesh.visible = isXrHudVisibleByUser;
+      console.log(`[WebXR] HUD toggled via grip button: visible=${isXrHudVisibleByUser}`);
     }
   };
   controller0.addEventListener('selectstart', onXRSelectStart);
   controller1.addEventListener('selectstart', onXRSelectStart);
   controller0.addEventListener('select', onXRSelect);
   controller1.addEventListener('select', onXRSelect);
-  controller0.addEventListener('squeeze', window.toggleXrHudVisibility);
-  controller1.addEventListener('squeeze', window.toggleXrHudVisibility);
+  controller0.addEventListener('squeeze', onXRSqueeze);
+  controller1.addEventListener('squeeze', onXRSqueeze);
 }
 
 // Camera Controls: OrbitControls (turntable) and TrackballControls (full 3-axis free rotation)
@@ -420,7 +416,7 @@ let activeLoadSessionId = 0;
 function setupStereoscopicPerEyeRendering(splatMesh) {
   if (!splatMesh || splatMesh._stereoHooked) return;
   splatMesh._stereoHooked = true;
-  splatMesh.onBeforeRender = function(renderer, scene, eyeCam, geometry, material) {
+  splatMesh.onBeforeRender = function (renderer, scene, eyeCam, geometry, material) {
     if (renderer && renderer.xr && renderer.xr.isPresenting && eyeCam) {
       // 1. Accurate per-eye Viewport Configuration from WebXR
       const vp = eyeCam.viewport;
@@ -680,7 +676,7 @@ async function loadChunkedTriangleMesh(url) {
     }
     try {
       await STATE.dropInViewer.dispose();
-    } catch (e) {}
+    } catch (e) { }
     STATE.dropInViewer = null;
     STATE.splatMesh = null;
   }
@@ -704,7 +700,7 @@ async function loadChunkedTriangleMesh(url) {
         isPrebakedChunks = true;
       }
     }
-  } catch (e) {}
+  } catch (e) { }
 
   if (!buffer) {
     const plyUrl = `${baseName}.ply`;
@@ -950,8 +946,8 @@ async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
   STATE.splatMesh = STATE.splatPivotGroup;
 
   // 4. Add splat scene in a single request with live progress tracking
-  const format = isPly 
-    ? (GS.SceneFormat ? GS.SceneFormat.Ply : 2) 
+  const format = isPly
+    ? (GS.SceneFormat ? GS.SceneFormat.Ply : 2)
     : (GS.SceneFormat ? GS.SceneFormat.Splat : 0);
 
   // Determine if active scene is Triangle Splatting
@@ -1055,10 +1051,10 @@ async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
         const centerY = (p(ys, 0.05) + p(ys, 0.95)) / 2;
         const centerZ = (p(zs, 0.05) + p(zs, 0.95)) / 2;
 
-        let isObjectScan = 
-          STATE.trainingMethod === 'image2splat' || 
-          STATE.trainingMethod === 'triangle' || 
-          url.toLowerCase().includes('image2splat') || 
+        let isObjectScan =
+          STATE.trainingMethod === 'image2splat' ||
+          STATE.trainingMethod === 'triangle' ||
+          url.toLowerCase().includes('image2splat') ||
           url.toLowerCase().includes('tank') ||
           (STATE.activeScene?.trainingMethod === 'triangle') ||
           (STATE.activeScene?.trainingMethod === 'image2splat') ||
@@ -1193,7 +1189,7 @@ async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
             STATE.activeScene = res.meta;
             updatePipelineUIForActiveScene();
           }
-        }).catch(() => {});
+        }).catch(() => { });
       }
     } else {
       safeFetchJson(`/api/models/meta/${modelBase}`).then(res => {
@@ -1201,7 +1197,7 @@ async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
           STATE.activeScene = res.meta;
           updatePipelineUIForActiveScene();
         }
-      }).catch(() => {});
+      }).catch(() => { });
     }
 
     if (isDynamicReplacement) {
@@ -1226,6 +1222,7 @@ let lastTime = performance.now();
 let lastFreeRoamTime = performance.now();
 let frameCount = 0;
 const fpsLabel = document.getElementById('stat-fps');
+const xrButtonAX_LastPressed = { left: false, right: false };
 
 function animate() {
   renderer.setAnimationLoop(() => {
@@ -1331,6 +1328,38 @@ function animate() {
             STATE.isExitingXR = true;
             session.end().finally(() => { STATE.isExitingXR = false; });
             return;
+          }
+
+          // Remap RAG Trigger strictly to 'A' (Right) or 'X' (Left) Button [Button 4 on Quest controllers]
+          const isAXPressed = Boolean(btns[4] && (btns[4].pressed || btns[4].value > 0.5));
+          const handKey = source.handedness || 'right';
+          const wasAXPressed = xrButtonAX_LastPressed[handKey] || false;
+          xrButtonAX_LastPressed[handKey] = isAXPressed;
+
+          if (isAXPressed && !wasAXPressed) {
+            if (!STATE.isRaycastQuerying) {
+              console.log(`[WebXR] Button '${handKey === 'left' ? 'X' : 'A'}' pressed on ${handKey} controller -> Triggering RAG inspection`);
+              let activeCtrl = controller0;
+              if (handKey === 'right') {
+                activeCtrl = (controller1 && controller1.userData.handedness === 'right') ? controller1 : controller0;
+              } else {
+                activeCtrl = (controller0 && controller0.userData.handedness === 'left') ? controller0 : controller1;
+              }
+              if (!activeCtrl) activeCtrl = controller0 || controller1;
+
+              if (activeCtrl) {
+                const tempMatrix = new THREE.Matrix4();
+                tempMatrix.identity().extractRotation(activeCtrl.matrixWorld);
+                const origin = new THREE.Vector3().setFromMatrixPosition(activeCtrl.matrixWorld);
+                const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
+
+                if (typeof performRaycastSelectionXR === 'function') {
+                  performRaycastSelectionXR(origin, direction);
+                }
+              }
+            } else {
+              console.log('[WebXR] A/X button ignored: inspection query already active (debounced)');
+            }
           }
 
           const hand = source.handedness;
@@ -1526,7 +1555,7 @@ function animate() {
           STATE.lastXRSortPos = null;
           STATE.dropInViewer.viewer.update(renderer, camera);
         }
-      } catch (e) {}
+      } catch (e) { }
     }
 
     renderer.render(scene, camera);
@@ -1577,26 +1606,8 @@ function showToast(message, type = 'info', durationMs = 4500) {
 // --- Collapsible Left & Right Panels (Immersive Viewport Mode) ---
 const btnToggleLeft = document.getElementById('btn-toggle-left-panel');
 const btnToggleRight = document.getElementById('btn-toggle-right-panel');
-const btnCollapseRight = document.getElementById('btn-collapse-right-panel');
-const btnExpandRight = document.getElementById('btn-expand-right-panel');
 const leftPanel = document.getElementById('left-panel');
 const rightPanel = document.getElementById('right-panel');
-
-function setRightPanelCollapsed(collapsed) {
-  if (!rightPanel) return;
-  rightPanel.classList.toggle('collapsed', collapsed);
-  if (btnToggleRight) {
-    btnToggleRight.classList.toggle('active', !collapsed);
-    btnToggleRight.setAttribute('title', collapsed ? 'Expand Spatial Audio RAG (Right Panel)' : 'Collapse Spatial Audio RAG (Right Panel)');
-  }
-  if (btnExpandRight) {
-    btnExpandRight.classList.toggle('visible', collapsed);
-  }
-  if (typeof onWindowResize === 'function') {
-    onWindowResize();
-  }
-}
-window.setRightPanelCollapsed = setRightPanelCollapsed;
 
 if (leftPanel) {
   leftPanel.addEventListener('transitionend', () => onWindowResize());
@@ -1616,34 +1627,11 @@ if (btnToggleLeft && leftPanel) {
 
 if (btnToggleRight && rightPanel) {
   btnToggleRight.addEventListener('click', () => {
-    const isCollapsed = !rightPanel.classList.contains('collapsed');
-    setRightPanelCollapsed(isCollapsed);
+    const isCollapsed = rightPanel.classList.toggle('collapsed');
+    btnToggleRight.classList.toggle('active', !isCollapsed);
+    btnToggleRight.setAttribute('title', isCollapsed ? 'Expand Spatial Audio RAG (Right Panel)' : 'Collapse Spatial Audio RAG (Right Panel)');
+    onWindowResize();
   });
-}
-
-if (btnCollapseRight && rightPanel) {
-  btnCollapseRight.addEventListener('click', (e) => {
-    e.stopPropagation();
-    setRightPanelCollapsed(true);
-  });
-}
-
-if (btnExpandRight && rightPanel) {
-  btnExpandRight.addEventListener('click', (e) => {
-    e.stopPropagation();
-    setRightPanelCollapsed(false);
-  });
-}
-
-// Ensure initial state matches panel class
-if (rightPanel) {
-  const initiallyCollapsed = rightPanel.classList.contains('collapsed');
-  if (btnExpandRight) {
-    btnExpandRight.classList.toggle('visible', initiallyCollapsed);
-  }
-  if (btnToggleRight) {
-    btnToggleRight.classList.toggle('active', !initiallyCollapsed);
-  }
 }
 
 // --- Step Tracker UI Helper ---
@@ -2103,7 +2091,7 @@ if (btnAbortSuspended) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId }),
-      }).catch(() => {});
+      }).catch(() => { });
     }
     localStorage.removeItem('splatris_active_job_id');
     localStorage.removeItem('splatris_active_scene_id');
@@ -2305,7 +2293,7 @@ function showQualityAuditModal(audit) {
     if (auditSummaryTitle) {
       auditSummaryTitle.textContent = isVerticalVideo
         ? 'Invalid Format: Vertical Video Detected'
-        : isApproved 
+        : isApproved
           ? 'Ready for 3D Gaussian Reconstruction'
           : 'Quality Gatekeeper Notice: High Failure Risk';
     }
@@ -2416,10 +2404,10 @@ function showQualityAuditModal(audit) {
       const guidanceItems = Array.isArray(audit.director_guidance) && audit.director_guidance.length > 0
         ? audit.director_guidance
         : [
-            'Maintain translational movement around the subject; avoid rotating the recording device on a fixed central axis.',
-            'Tilt the recording device ~15° downwards toward surface boundaries and textured planes.',
-            'Ensure consistent illumination across all viewing angles without harsh specular glare or auto-exposure jumps.'
-          ];
+          'Maintain translational movement around the subject; avoid rotating the recording device on a fixed central axis.',
+          'Tilt the recording device ~15° downwards toward surface boundaries and textured planes.',
+          'Ensure consistent illumination across all viewing angles without harsh specular glare or auto-exposure jumps.'
+        ];
 
       auditGuidanceList.innerHTML = guidanceItems.map(item => `
         <div class="guidance-card">
@@ -2526,7 +2514,7 @@ async function safeFetchJson(url, options = {}) {
       try {
         const errJson = await res.json();
         errMsg = errJson.error || errJson.message || errMsg;
-      } catch (e) {}
+      } catch (e) { }
     } else {
       const errText = await res.text();
       if (errText) errMsg = `${errMsg}: ${errText.slice(0, 150)}`;
@@ -3018,7 +3006,7 @@ async function executeEndToEndPipeline(file) {
       if (uploadData.audit) {
         const score = Math.round(uploadData.audit.readiness_score || 0);
         progressStage.textContent = `Pre-Flight AI Audit: Score ${score}% (${uploadData.audit.status})`;
-        
+
         const auditDecision = await showQualityAuditModal(uploadData.audit);
         if (auditDecision.action === 'reupload' || auditDecision.action === 'cancel') {
           dropTitle.textContent = 'Drop a walkthrough video or single object photo';
@@ -3345,7 +3333,7 @@ if (btnWebXR) {
     if (typeof THREE !== 'undefined' && THREE.AudioContext && THREE.AudioContext.getContext) {
       const xrAudioContext = THREE.AudioContext.getContext();
       if (xrAudioContext && xrAudioContext.state === 'suspended') {
-        xrAudioContext.resume().catch(() => {});
+        xrAudioContext.resume().catch(() => { });
       }
     }
     // 2. Unlock Speech Synthesis with a silent utterance directly on DOM user gesture
@@ -3493,12 +3481,6 @@ if (btnWebXR) {
           console.log('[WebXR] In-world HUD chase initialized in scene at offset (0.0, -0.1, -0.6)');
         }
 
-        session.addEventListener('squeeze', () => {
-          if (typeof window.toggleXrHudVisibility === 'function') {
-            window.toggleXrHudVisibility();
-          }
-        });
-
         // Attach THREE.AudioListener to the active XR camera so spatial audio doesn't drop to 0 when walking
         initSpatialAudio();
         if (threeAudioListener) {
@@ -3562,7 +3544,7 @@ if (btnWebXR) {
         if (existing) {
           try {
             await existing.end();
-          } catch (e) {}
+          } catch (e) { }
         }
         if (btnWebXR.querySelector('span')) {
           btnWebXR.querySelector('span').textContent = 'Enter WebXR';
@@ -4053,13 +4035,13 @@ function stopSpatialAudio() {
     try {
       activeSpatialAudioSource.stop();
       activeSpatialAudioSource.disconnect();
-    } catch (e) {}
+    } catch (e) { }
     activeSpatialAudioSource = null;
   }
   if ('speechSynthesis' in window) {
     try {
       window.speechSynthesis.cancel();
-    } catch (e) {}
+    } catch (e) { }
   }
   activeUtterance = null;
   if (waveAnim) waveAnim.classList.remove('active');
@@ -4068,7 +4050,7 @@ function stopSpatialAudio() {
     ttsActiveFinishCallback = null;
     try {
       cb();
-    } catch (e) {}
+    } catch (e) { }
   }
 }
 
@@ -4264,172 +4246,52 @@ function updateChatMessage(id, text, sources = [], grounding = '') {
  * @returns {string|null} Base64 data URL (image/jpeg) or null
  */
 function takeScreenshot({ targetPoint = null, crop = false, screenX = null, screenY = null, boxSize = 540 } = {}) {
-  const wasReticleVisible = raycastTargetMesh ? raycastTargetMesh.visible : false;
-  const wasHudVisible = xrHudMesh ? xrHudMesh.visible : false;
   try {
+    // In WebXR: NEVER interrupt the render loop or alter stereoscopic camera matrices.
+    // Return null so the pipeline falls back to text-only metadata Tavily grounding.
+    if (renderer && renderer.xr && renderer.xr.isPresenting) {
+      return null;
+    }
+
     const canvasEl = renderer?.domElement || document.getElementById('webgl-canvas');
     if (!canvasEl) return null;
 
-    // 1. Temporarily hide HUD & reticle
-    if (raycastTargetMesh) raycastTargetMesh.visible = false;
-    if (xrHudMesh) xrHudMesh.visible = false;
-
-    const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera(camera) : camera;
-
-    // Calculate center pixel coordinates for cropping
-    const rect = canvasEl.getBoundingClientRect();
-    const scaleX = rect.width ? (canvasEl.width / rect.width) : 1;
-    const scaleY = rect.height ? (canvasEl.height / rect.height) : 1;
-
-    let centerPixelX;
-    let centerPixelY;
-    if (screenX != null && screenY != null) {
-      // If coordinates are in CSS pixel space (desktop mouse event), scale to canvas buffer pixels
-      if (!renderer.xr.isPresenting && screenX <= (rect.width || 0) + 1 && scaleX !== 1) {
-        centerPixelX = Math.round(screenX * scaleX);
-        centerPixelY = Math.round(screenY * scaleY);
-      } else {
-        centerPixelX = Math.round(screenX);
-        centerPixelY = Math.round(screenY);
-      }
-    } else if (targetPoint) {
-      const proj = targetPoint.clone();
-      proj.project(activeCam);
-      centerPixelX = Math.round((proj.x * 0.5 + 0.5) * canvasEl.width);
-      centerPixelY = Math.round((-proj.y * 0.5 + 0.5) * canvasEl.height);
-    } else {
-      centerPixelX = Math.round(canvasEl.width / 2);
-      centerPixelY = Math.round(canvasEl.height / 2);
-    }
-
-    centerPixelX = Math.max(0, Math.min(canvasEl.width, centerPixelX));
-    centerPixelY = Math.max(0, Math.min(canvasEl.height, centerPixelY));
-
-    // 2. Force synchronous render frame WITHOUT HUD
-    if (STATE.dropInViewer && STATE.dropInViewer.viewer) {
-      try {
-        STATE.dropInViewer.viewer.update(renderer, activeCam);
-      } catch (e) {}
-    }
-    renderer.render(scene, activeCam);
-
-    // 3. Primary Extraction: Direct 2D canvas crop from canvasEl
     let dataUrl = null;
-    const targetCropSize = Math.max(256, Math.min(boxSize || 540, canvasEl.width, canvasEl.height));
-    const halfCrop = Math.floor(targetCropSize / 2);
-    const srcX = Math.max(0, Math.min(canvasEl.width - targetCropSize, centerPixelX - halfCrop));
-    const srcY = Math.max(0, Math.min(canvasEl.height - targetCropSize, centerPixelY - halfCrop));
+    if (!crop) {
+      dataUrl = canvasEl.toDataURL('image/jpeg', 0.85);
+    } else {
+      const rect = canvasEl.getBoundingClientRect();
+      const scaleX = canvasEl.width / (rect.width || 1);
+      const scaleY = canvasEl.height / (rect.height || 1);
 
-    try {
+      const actualX = screenX != null ? screenX : (rect.width / 2);
+      const actualY = screenY != null ? screenY : (rect.height / 2);
+
+      const centerPixelX = Math.round(actualX * scaleX);
+      const centerPixelY = Math.round(actualY * scaleY);
+
+      const targetCropSize = Math.round(boxSize * Math.min(scaleX, scaleY));
+      const cropSize = Math.max(320, Math.min(targetCropSize, canvasEl.width, canvasEl.height));
+
+      const halfCrop = Math.floor(cropSize / 2);
+      let srcX = Math.max(0, Math.min(canvasEl.width - cropSize, centerPixelX - halfCrop));
+      let srcY = Math.max(0, Math.min(canvasEl.height - cropSize, centerPixelY - halfCrop));
+
       const cropCanvas = document.createElement('canvas');
-      cropCanvas.width = targetCropSize;
-      cropCanvas.height = targetCropSize;
+      cropCanvas.width = cropSize;
+      cropCanvas.height = cropSize;
       const ctx = cropCanvas.getContext('2d');
       if (ctx) {
         ctx.fillStyle = '#07090e';
-        ctx.fillRect(0, 0, targetCropSize, targetCropSize);
-        ctx.drawImage(canvasEl, srcX, srcY, targetCropSize, targetCropSize, 0, 0, targetCropSize, targetCropSize);
-        const testUrl = cropCanvas.toDataURL('image/jpeg', 0.85);
-
-        if (testUrl && testUrl.length > 800) {
-          if (renderer.xr.isPresenting) {
-            // Verify that WebXR canvas buffer isn't completely black
-            const sample = ctx.getImageData(0, 0, Math.min(24, targetCropSize), Math.min(24, targetCropSize));
-            let nonZero = 0;
-            for (let i = 0; i < sample.data.length; i += 4) {
-              if (sample.data[i] > 10 || sample.data[i + 1] > 10 || sample.data[i + 2] > 10) {
-                nonZero++;
-              }
-            }
-            if (nonZero >= 2) {
-              dataUrl = testUrl;
-            } else {
-              console.warn('[SpatialRaycast] WebXR canvas drawImage returned black buffer; falling back to WebGLRenderTarget readPixels');
-            }
-          } else {
-            dataUrl = testUrl;
-          }
-        }
+        ctx.fillRect(0, 0, cropSize, cropSize);
+        ctx.drawImage(canvasEl, srcX, srcY, cropSize, cropSize, 0, 0, cropSize, cropSize);
+        dataUrl = cropCanvas.toDataURL('image/jpeg', 0.85);
       }
-    } catch (cropErr) {
-      console.warn('[SpatialRaycast] Primary canvas crop failed:', cropErr);
-    }
-
-    // 4. Fallback Extraction: WebGLRenderTarget + readPixels for WebXR compatibility
-    if (!dataUrl) {
-      try {
-        console.log('[SpatialRaycast] Capturing WebXR scene via temporary WebGLRenderTarget + readPixels...');
-        const renderW = Math.min(1024, canvasEl.width || 1024);
-        const renderH = Math.min(1024, canvasEl.height || 1024);
-        const rt = new THREE.WebGLRenderTarget(renderW, renderH, {
-          format: THREE.RGBAFormat,
-          type: THREE.UnsignedByteType,
-        });
-
-        const prevTarget = renderer.getRenderTarget();
-        const prevXrEnabled = renderer.xr.enabled;
-
-        renderer.xr.enabled = false;
-        renderer.setRenderTarget(rt);
-        renderer.clear();
-
-        if (STATE.dropInViewer && STATE.dropInViewer.viewer) {
-          try { STATE.dropInViewer.viewer.update(renderer, activeCam); } catch (e) {}
-        }
-        renderer.render(scene, activeCam);
-
-        const pixels = new Uint8Array(renderW * renderH * 4);
-        renderer.readRenderTargetPixels(rt, 0, 0, renderW, renderH, pixels);
-
-        renderer.setRenderTarget(prevTarget);
-        renderer.xr.enabled = prevXrEnabled;
-        rt.dispose();
-
-        // Convert centerPixelX & centerPixelY to render target coordinates
-        const rtCenterX = Math.round((centerPixelX / canvasEl.width) * renderW);
-        const rtCenterY = Math.round((centerPixelY / canvasEl.height) * renderH);
-
-        const rtCropSize = Math.max(256, Math.min(boxSize || 512, renderW, renderH));
-        const rtHalfCrop = Math.floor(rtCropSize / 2);
-        const rtCropX = Math.max(0, Math.min(renderW - rtCropSize, rtCenterX - rtHalfCrop));
-        const rtCropY = Math.max(0, Math.min(renderH - rtCropSize, rtCenterY - rtHalfCrop));
-
-        const rtCanvas = document.createElement('canvas');
-        rtCanvas.width = rtCropSize;
-        rtCanvas.height = rtCropSize;
-        const rtCtx = rtCanvas.getContext('2d');
-        if (rtCtx) {
-          const rtImgData = rtCtx.createImageData(rtCropSize, rtCropSize);
-          for (let cy = 0; cy < rtCropSize; cy++) {
-            const dstOffset = cy * rtCropSize * 4;
-            // WebGL readPixels is bottom-to-top; flip Y for 2D canvas
-            const webglRow = (renderH - 1) - (rtCropY + cy);
-            const srcOffset = (webglRow * renderW + rtCropX) * 4;
-            rtImgData.data.set(pixels.subarray(srcOffset, srcOffset + rtCropSize * 4), dstOffset);
-          }
-          rtCtx.putImageData(rtImgData, 0, 0);
-          dataUrl = rtCanvas.toDataURL('image/jpeg', 0.85);
-        }
-      } catch (rtErr) {
-        console.error('[SpatialRaycast] WebGLRenderTarget readPixels fallback failed:', rtErr);
-      }
-    }
-
-    // 5. Restore HUD & reticle immediately
-    if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
-    if (xrHudMesh) {
-      if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
-      xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
     }
 
     return dataUrl;
   } catch (err) {
-    if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
-    if (xrHudMesh) {
-      if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
-      xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
-    }
-    console.warn('[SpatialRaycast] takeScreenshot fatal error:', err);
+    console.warn('[SpatialRaycast] takeScreenshot error:', err);
     return null;
   }
 }
@@ -4545,9 +4407,7 @@ function performRaycastSelection(mouseNdc, screenX, screenY) {
 let xrHudMesh = null;
 let xrHudCanvas = null;
 let xrHudTexture = null;
-let lastHudContent = { title: '', subtitle: '', status: '', image: null };
-let activeHudImage = null;
-let activeHudImageSrc = null;
+let lastHudContent = { title: '', subtitle: '', status: '' };
 
 function prependAudioBlockedToHud() {
   if (lastHudContent && lastHudContent.status) {
@@ -4557,7 +4417,6 @@ function prependAudioBlockedToHud() {
         title: lastHudContent.title,
         subtitle: lastHudContent.subtitle,
         status: blockedStatus,
-        image: lastHudContent.image,
       });
     }
   }
@@ -4593,38 +4452,9 @@ function createXRInWorldHUD() {
   return xrHudMesh;
 }
 
-function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = '', image = null } = {}) {
-  if (image !== undefined && image !== null) {
-    if (typeof image === 'string' && image.length > 50) {
-      if (image !== activeHudImageSrc) {
-        activeHudImageSrc = image;
-        const img = new Image();
-        img.onload = () => {
-          activeHudImage = img;
-          renderXRHUDCanvas();
-        };
-        img.onerror = () => {
-          activeHudImage = null;
-          renderXRHUDCanvas();
-        };
-        img.src = image;
-      }
-    }
-  } else if (title === 'SPLATRIS WEBXR') {
-    activeHudImage = null;
-    activeHudImageSrc = null;
-  }
-
-  lastHudContent = { title, subtitle, status, image: image || activeHudImageSrc };
-  renderXRHUDCanvas();
-}
-
-function renderXRHUDCanvas() {
+function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = '' } = {}) {
+  lastHudContent = { title, subtitle, status };
   if (!xrHudCanvas || !xrHudTexture || !xrHudMesh) return;
-
-  const title = lastHudContent.title || 'SPLATRIS WEBXR';
-  const subtitle = lastHudContent.subtitle || '';
-  const status = lastHudContent.status || '';
 
   const canvasWidth = 512;
   const paddingX = 24;
@@ -4657,22 +4487,20 @@ function renderXRHUDCanvas() {
     }
   } else {
     lines = [
+      "Press 'A' (Right) or 'X' (Left) to scan object.",
+      'Pull Trigger for Exit button / UI interaction.',
       'Press Grip button to hide/show panel.',
-      'Pull Trigger to scan an object.',
       '',
-      '🕹️ Left Stick: Move & Glide into Scene',
-      '🔄 Right Stick: Turn & Fly Up / Down',
+      '🕹️ Left Stick: Move & Glide | 🔄 Right Stick: Turn & Fly',
     ];
   }
 
-  // Calculate dynamic canvas height based on wrapped lines + optional image thumbnail
+  // Calculate dynamic canvas height based on wrapped lines
   const lineHeight = 26;
   const topHeaderHeight = subtitle ? 96 : 72;
-  const hasImage = Boolean(activeHudImage && activeHudImage.complete && activeHudImage.naturalWidth > 0);
-  const imgSectionHeight = hasImage ? 172 : 0;
-  const textContentHeight = Math.max(80, lines.length * lineHeight + 18);
+  const textContentHeight = Math.max(90, lines.length * lineHeight + 18);
   const exitButtonHeight = 56;
-  const totalCanvasHeight = Math.max(340, Math.min(1400, topHeaderHeight + imgSectionHeight + textContentHeight + exitButtonHeight + 36));
+  const totalCanvasHeight = Math.max(340, Math.min(1400, topHeaderHeight + textContentHeight + exitButtonHeight + 36));
 
   xrHudCanvas.width = canvasWidth;
   xrHudCanvas.height = totalCanvasHeight;
@@ -4708,57 +4536,10 @@ function renderXRHUDCanvas() {
     ctx.fillText(subtitle.slice(0, 48), paddingX, 78);
   }
 
-  let curY = topHeaderHeight + 10;
-
-  // Render Captured Image Thumbnail in 3D HUD if available
-  if (hasImage) {
-    const imgW = canvasWidth - (paddingX * 2);
-    const imgH = 150;
-    const imgX = paddingX;
-    const imgY = curY;
-
-    ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(imgX, imgY, imgW, imgH, 12);
-    ctx.clip();
-
-    ctx.fillStyle = '#000000';
-    ctx.fillRect(imgX, imgY, imgW, imgH);
-
-    // Center and scale image with cover aspect ratio
-    const nw = activeHudImage.naturalWidth;
-    const nh = activeHudImage.naturalHeight;
-    const r = Math.max(imgW / nw, imgH / nh);
-    const nwScaled = nw * r;
-    const nhScaled = nh * r;
-    const ox = imgX + (imgW - nwScaled) / 2;
-    const oy = imgY + (imgH - nhScaled) / 2;
-    ctx.drawImage(activeHudImage, ox, oy, nwScaled, nhScaled);
-
-    ctx.restore();
-
-    // Cyan glowing border around thumbnail
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
-    ctx.beginPath();
-    ctx.roundRect(imgX, imgY, imgW, imgH, 12);
-    ctx.stroke();
-
-    // Badge label: "📷 CAPTURED TARGET"
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.90)';
-    ctx.beginPath();
-    ctx.roundRect(imgX + 8, imgY + 8, 155, 24, 6);
-    ctx.fill();
-    ctx.fillStyle = '#38bdf8';
-    ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('📷 CAPTURED TARGET', imgX + 16, imgY + 24);
-
-    curY += imgH + 20;
-  }
-
   // Body text lines
   ctx.fillStyle = '#e2e8f0';
   ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  let curY = topHeaderHeight + 14;
   for (const line of lines) {
     if (line) {
       ctx.fillText(line, paddingX, curY);
@@ -4782,7 +4563,8 @@ function renderXRHUDCanvas() {
   ctx.fillText('🚪 Click or Press [ B / Y ] to Exit WebXR', canvasWidth / 2, btnY + 28);
   ctx.textAlign = 'left';
 
-  // Action: Scale the PlaneGeometry proportionally based on the wrapped canvas
+  // Action: Scale the PlaneGeometry proportionally based on the wrapped canvas:
+  // hud.scale.set(0.4, 0.4 * (canvas.height / canvas.width), 1);
   if (!xrHudMesh.geometry) {
     xrHudMesh.geometry = new THREE.PlaneGeometry(1, 1);
   }
@@ -4790,8 +4572,6 @@ function renderXRHUDCanvas() {
   if (xrHudMesh.material) {
     xrHudMesh.material.depthTest = false;
     xrHudMesh.material.depthWrite = false;
-    xrHudMesh.material.map = xrHudTexture;
-    xrHudMesh.material.needsUpdate = true;
   }
   xrHudMesh.renderOrder = 999;
   xrHudTexture.needsUpdate = true;
@@ -4882,24 +4662,6 @@ function performRaycastSelectionXR(origin, direction) {
     hitPoint = origin.clone().addScaledVector(direction, 2.2);
   }
 
-  // 3D to 2D Projection for XR Image Cropping:
-  // Project the 3D intersection point back onto the 2D screen space of the active XR camera
-  let screenX = null;
-  let screenY = null;
-  const canvasEl = renderer?.domElement || document.getElementById('webgl-canvas');
-  if (canvasEl && hitPoint) {
-    try {
-      const xrCam = renderer.xr.isPresenting ? renderer.xr.getCamera(camera) : camera;
-      const vector = hitPoint.clone();
-      vector.project(xrCam); // Get Normalized Device Coordinates (NDC) [-1, 1]
-      screenX = (vector.x * 0.5 + 0.5) * canvasEl.width;
-      screenY = (-vector.y * 0.5 + 0.5) * canvasEl.height;
-      console.log(`[SpatialRaycastXR] Projected 3D point (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}) to 2D canvas coordinates: [${screenX.toFixed(1)}, ${screenY.toFixed(1)}]`);
-    } catch (projErr) {
-      console.warn('[SpatialRaycastXR] Error calculating 3D->2D camera projection:', projErr);
-    }
-  }
-
   // 2. Immediate Raycast Visual Feedback:
   updateXRHUDContent({
     title: 'SCANNING OBJECT...',
@@ -4907,7 +4669,7 @@ function performRaycastSelectionXR(origin, direction) {
     status: 'Scanning object... Fetching data from Tavily.',
   });
 
-  triggerSpatialObjectInspection(hitPoint, screenX, screenY);
+  triggerSpatialObjectInspection(hitPoint, null, null);
 }
 
 // State Lock Watchdog to prevent permanent lockup if network/TTS stalls
@@ -4953,29 +4715,18 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
     raycastTargetMesh.visible = true;
   }
 
-  // Ensure screenX and screenY are available via 3D to 2D camera projection if not provided
-  if ((screenX == null || screenY == null) && hitPoint) {
-    try {
-      const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera(camera) : camera;
-      const canvasEl = renderer?.domElement || document.getElementById('webgl-canvas');
-      if (canvasEl && activeCam) {
-        const v = hitPoint.clone();
-        v.project(activeCam);
-        screenX = (v.x * 0.5 + 0.5) * canvasEl.width;
-        screenY = (-v.y * 0.5 + 0.5) * canvasEl.height;
-      }
-    } catch (e) {
-      console.warn('[SpatialRaycast] Projection calculation note:', e);
-    }
-  }
-
   // Show "Processing..." indicator in HUD & Desktop panel
   const emitterEl = document.getElementById('emitter-coords');
   if (emitterEl) {
     emitterEl.textContent = `Processing (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)})...`;
   }
 
-  showToast(`🎯 Object selected at (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}). Querying Vision RAG...`, 'info', 3000);
+  const isWebXR = Boolean(renderer && renderer.xr && renderer.xr.isPresenting);
+
+  // 1. Capture dedicated target-centered snapshot for Desktop (bypassed in WebXR to protect render loop)
+  const imageBase64 = isWebXR ? null : takeScreenshot({ targetPoint: hitPoint, crop: true, screenX, screenY, boxSize: 540 });
+
+  showToast(`🎯 Object selected at (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}). Querying Tavily Spatial RAG...`, 'info', 3000);
 
   // In WebXR: Immediate visual feedback on HUD that raycast registered
   updateXRHUDContent({
@@ -4985,140 +4736,115 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
   });
 
   // Automatically open RAG drawer if collapsed (desktop)
-  if (typeof setRightPanelCollapsed === 'function') {
-    setRightPanelCollapsed(false);
+  const rightPanel = document.getElementById('right-panel');
+  if (rightPanel && rightPanel.classList.contains('collapsed')) {
+    rightPanel.classList.remove('collapsed');
+    const toggleBtn = document.getElementById('btn-toggle-right-panel');
+    if (toggleBtn) toggleBtn.classList.add('active');
+    if (typeof onWindowResize === 'function') onWindowResize();
   }
 
   // Post user query in chat
   appendChatMessage('user', `🎯 Spatial Raycast: Inspect object at [${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}]`);
 
   // Post loading card in chat
-  const typingId = appendChatMessage('agent', '⏳ Processing: Capturing WebGL viewport crop, running Nemotron Vision identification & Tavily grounding...');
+  const typingId = appendChatMessage('agent', isWebXR
+    ? '⏳ Processing: Querying scene context & retrieving Tavily historical grounding for WebXR...'
+    : '⏳ Processing: Capturing WebGL viewport crop, running Nemotron Vision identification & Tavily grounding...');
 
-  // 1. Capture dedicated target-centered snapshot (crops around projected coordinates)
-  let imageBase64 = null;
-  try {
-    imageBase64 = takeScreenshot({ targetPoint: hitPoint, crop: true, screenX, screenY, boxSize: 540 });
-    if (!imageBase64 || imageBase64.length < 500) {
-      throw new Error('Local snapshot generation failed or produced empty image data.');
-    }
-  } catch (snapErr) {
-    console.error('[SpatialRaycast] Local snapshot generation failed:', snapErr);
-    updateXRHUDContent({
-      title: 'ERROR',
-      subtitle: 'Image capture failed',
-      status: 'Error: Failed to capture object image.',
-      image: null,
-    });
-    updateChatMessage(typingId, '⚠️ Error: Failed to capture object image.', []);
-    showToast('⚠️ Error: Failed to capture object image.', 'error', 3500);
-    unlockRaycastQuery();
-    return;
-  }
-
-  // In WebXR: Display the captured target image immediately in the 3D HUD!
-  updateXRHUDContent({
-    title: 'SCANNING OBJECT...',
-    subtitle: `Point: (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)})`,
-    status: 'Captured 3D object image. Analyzing via Nemotron Vision & Tavily...',
-    image: imageBase64,
-  });
-
+  let res = null;
   try {
     const camPos = new THREE.Vector3();
     activeCam.getWorldPosition(camPos);
 
     const payload = {
       point: { x: hitPoint.x, y: hitPoint.y, z: hitPoint.z },
-      activeModel: STATE.activeModelUrl,
+      activeModel: STATE.activeModelUrl || (STATE.activeScene && STATE.activeScene.url) || '',
       cameraPosition: { x: camPos.x, y: camPos.y, z: camPos.z },
-      videoId: STATE.currentSceneContext.videoId,
-      imageBase64,
+      videoId: STATE.currentSceneContext?.videoId,
+      sceneName: (STATE.activeScene && (STATE.activeScene.name || STATE.activeScene.originalFilename)) || (STATE.currentSceneContext && (STATE.currentSceneContext.sceneName || STATE.currentSceneContext.originalFilename)) || '',
+      imageBase64: isWebXR ? null : imageBase64,
+      isWebXR,
     };
 
-    const fetchController = new AbortController();
-    const fetchTimer = setTimeout(() => {
-      try { fetchController.abort(); } catch (e) {}
-    }, 15000);
-
-    const res = await safeFetchJson('/api/spatial/raycast-object', {
+    res = await safeFetchJson('/api/spatial/raycast-object', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
-      signal: fetchController.signal,
-    }).catch((fetchErr) => {
-      console.warn('[SpatialRaycast] safeFetchJson rejected:', fetchErr);
-      return { success: false, error: fetchErr.message || 'Network request failed' };
-    }).finally(() => {
-      clearTimeout(fetchTimer);
     });
+  } catch (apiErr) {
+    console.error('[SpatialRaycast] API error:', apiErr);
+    const fallbackMsg = "Could not fetch object data from server. Please try again.";
+    updateChatMessage(typingId, `⚠️ ${fallbackMsg} (${apiErr.message})`, []);
+    updateXRHUDContent({
+      title: 'INSPECTION ERROR',
+      subtitle: 'API Request Failed',
+      status: `${fallbackMsg}\n${apiErr.message}`,
+    });
+    unlockRaycastQuery();
+    return;
+  }
 
-    if (!res || !res.success || !res.objectName || res.objectName.trim().length === 0) {
-      throw new Error((res && res.error) || 'Could not identify object.');
-    }
+  if (!res || !res.success) {
+    const errMsg = (res && res.error) || 'Failed to inspect object';
+    updateChatMessage(typingId, `⚠️ ${errMsg}`, []);
+    updateXRHUDContent({
+      title: 'OBJECT NOT FOUND',
+      subtitle: 'Inspection unsuccessful',
+      status: errMsg,
+    });
+    unlockRaycastQuery();
+    return;
+  }
 
-    const objectName = (res.objectName || '').trim();
-    const isUnidentified = !objectName || objectName.toLowerCase() === 'unknown object' || (typeof res.confidence === 'number' && res.confidence < 0.35);
+  const objectName = (res.objectName || 'Identified 3D Object').trim();
+  const summaryText = res.tavilyData?.summary || res.tavilyGrounding?.summary || res.visualDescription || `Target object identified in 3D scene: ${objectName}.`;
 
-    if (isUnidentified) {
-      const fallbackMsg = 'Error: Could not identify object.';
-      updateXRHUDContent({
-        title: 'ERROR',
-        subtitle: 'Could not identify object',
-        status: 'Error: Could not identify object.',
-      });
-      updateChatMessage(typingId, '⚠️ Error: Could not identify object.', []);
-      unlockRaycastQuery();
-      return;
-    }
+  // 1. Persist inspected object into state for follow-up conversational RAG
+  STATE.lastInspectedObject = {
+    objectName: res.objectName,
+    category: res.category,
+    confidence: res.confidence,
+    visualDescription: res.visualDescription,
+    tavilyData: res.tavilyData,
+    cropUrl: res.cropUrl,
+    point: hitPoint,
+  };
 
-    // Persist inspected object into state for follow-up conversational RAG
-    STATE.lastInspectedObject = {
-      objectName: res.objectName,
-      category: res.category,
-      confidence: res.confidence,
-      visualDescription: res.visualDescription,
-      tavilyData: res.tavilyData,
-      cropUrl: res.cropUrl,
-      point: hitPoint,
-    };
-
-    // Update DOM written text in Desktop RAG panel
+  // 2. Update DOM written text in Desktop RAG panel (Guaranteed text binding)
+  try {
     renderRaycastResult(typingId, res);
-
     if (res.objectName) {
       updateQueryChipsForObject(res.objectName);
     }
+  } catch (domErr) {
+    console.warn('[SpatialRaycast] Error updating desktop panel:', domErr);
+  }
 
-    // In WebXR: Update floating HUD with object name, concise summary, and the captured image!
-    const summaryText = res.tavilyData?.summary || res.tavilyGrounding?.summary || res.visualDescription || '';
+  // 3. Update floating VR HUD canvas (Guaranteed text binding)
+  try {
     updateXRHUDContent({
-      title: (res.objectName || 'OBJECT IDENTIFIED').toUpperCase(),
-      subtitle: `${res.category || 'Spatial Element'} • ${Math.round((res.confidence || 0.9) * 100)}% Match`,
+      title: objectName.toUpperCase(),
+      subtitle: `${res.category || 'Spatial Element'} • ${Math.round((res.confidence || 0.95) * 100)}% Match`,
       status: summaryText,
-      image: res.cropUrl || imageBase64,
     });
+  } catch (hudErr) {
+    console.warn('[SpatialRaycast] Error updating XR HUD:', hudErr);
+  }
 
-    // Dynamic spatial speech narration positioned at the object
-    // Automatically triggers in WebXR mode or when audio is enabled
-    // Only unlock the trigger state AFTER audio finishes speaking
-    if (renderer.xr.isPresenting || STATE.audioEnabled) {
-      const speechText = `${res.objectName}. ${summaryText}`;
+  // 4. Dynamic spatial speech narration positioned at the object
+  // Audio playback is completely isolated: any audio failure or browser block will NEVER clear or mutate panel text
+  if (isWebXR || STATE.audioEnabled) {
+    try {
+      const speechText = `${objectName}. ${summaryText}`;
       speakSpatialAudio(speechText, hitPoint, () => {
         unlockRaycastQuery();
       });
-    } else {
+    } catch (audioErr) {
+      console.warn('[SpatialRaycast] Audio playback failed, text remains visible:', audioErr);
       unlockRaycastQuery();
     }
-  } catch (err) {
-    console.error('Raycast inspection error:', err);
-    updateChatMessage(typingId, `Target inspection error: ${err.message}`, []);
-    updateXRHUDContent({
-      title: 'ERROR',
-      subtitle: 'Could not identify object',
-      status: `Error: ${err.message || 'Could not identify object.'}`,
-      image: imageBase64,
-    });
+  } else {
     unlockRaycastQuery();
   }
 }
@@ -5134,7 +4860,7 @@ function renderRaycastResult(id, result) {
   const desc = (result.visualDescription || result.description || 'Target object identified in 3D scene.').trim();
   const confidence = result.confidence ? Math.round(result.confidence * 100) : 92;
   const cropUrl = result.cropUrl || (result.originalFrame ? `/uploads/frames/${result.originalFrame}` : '');
-  
+
   // Tavily payload mapping: support both tavilyData and tavilyGrounding
   const tavily = result.tavilyData || result.tavilyGrounding || {};
   const summary = (tavily.summary || result.summary || '').trim();
@@ -5150,8 +4876,12 @@ function renderRaycastResult(id, result) {
   }
 
   // Ensure right panel is visible
-  if (typeof setRightPanelCollapsed === 'function') {
-    setRightPanelCollapsed(false);
+  const rightPanel = document.getElementById('right-panel');
+  if (rightPanel && rightPanel.classList.contains('collapsed')) {
+    rightPanel.classList.remove('collapsed');
+    const toggleBtn = document.getElementById('btn-toggle-right-panel');
+    if (toggleBtn) toggleBtn.classList.add('active');
+    if (typeof onWindowResize === 'function') onWindowResize();
   }
 
   contentEl.innerHTML = `
@@ -5836,7 +5566,7 @@ function updateDeviceBrandingTag() {
         gpuRenderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || '';
       }
     }
-  } catch (e) {}
+  } catch (e) { }
 
   if (gpuRenderer.includes('Apple M') || gpuRenderer.includes('Apple Silicon')) {
     tag.textContent = 'Apple Silicon Native • Splatris Engine';

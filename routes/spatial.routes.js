@@ -364,13 +364,13 @@ router.post('/instant-object/tavily-enrich', async (req, res) => {
  */
 router.post('/raycast-object', async (req, res) => {
   try {
-    const { point, activeModel, cameraPosition, imageBase64, videoId } = req.body || {};
+    const { point, activeModel, cameraPosition, imageBase64, videoId, isWebXR, sceneName } = req.body || {};
     if (!point || typeof point.x !== 'number') {
       return res.status(400).json({ success: false, error: 'Invalid 3D intersection point coordinates.' });
     }
 
-    console.log(`[SpatialRaycast] Query received for 3D point (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)}) on model ${activeModel} (has viewport capture: ${Boolean(imageBase64)})`);
-    const result = await cropAndIdentifyObject({ point, activeModel, cameraPosition, imageBase64, videoId });
+    console.log(`[SpatialRaycast] Query received for 3D point (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)}) on model ${activeModel} (isWebXR: ${Boolean(isWebXR)}, has viewport capture: ${Boolean(imageBase64)})`);
+    const result = await cropAndIdentifyObject({ point, activeModel, cameraPosition, imageBase64, videoId, isWebXR, sceneName });
     res.json(result);
   } catch (err) {
     console.error('[SpatialRaycast] Error handling 3D point query:', err);
