@@ -4454,7 +4454,14 @@ function createXRInWorldHUD() {
 
 function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = '' } = {}) {
   lastHudContent = { title, subtitle, status };
+  if (!xrHudMesh || !xrHudCanvas || !xrHudTexture) {
+    createXRInWorldHUD();
+  }
   if (!xrHudCanvas || !xrHudTexture || !xrHudMesh) return;
+
+  if (renderer && renderer.xr && renderer.xr.isPresenting) {
+    xrHudMesh.visible = isXrHudVisibleByUser;
+  }
 
   const canvasWidth = 512;
   const paddingX = 24;
@@ -4850,7 +4857,11 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
 }
 
 function renderRaycastResult(id, result) {
-  const el = document.getElementById(id);
+  let el = id ? document.getElementById(id) : null;
+  if (!el && chatLog) {
+    const newId = appendChatMessage('agent', 'Analyzing object...');
+    el = document.getElementById(newId);
+  }
   if (!el) return;
 
   const contentEl = el.querySelector('.msg-content');
@@ -4858,7 +4869,7 @@ function renderRaycastResult(id, result) {
 
   const objName = (result.objectName || 'Detected Spatial Object').trim();
   const desc = (result.visualDescription || result.description || 'Target object identified in 3D scene.').trim();
-  const confidence = result.confidence ? Math.round(result.confidence * 100) : 92;
+  const confidence = result.confidence ? Math.round(result.confidence * 100) : 95;
   const cropUrl = result.cropUrl || (result.originalFrame ? `/uploads/frames/${result.originalFrame}` : '');
 
   // Tavily payload mapping: support both tavilyData and tavilyGrounding
@@ -4885,7 +4896,7 @@ function renderRaycastResult(id, result) {
   }
 
   contentEl.innerHTML = `
-    <div>Identified target via <strong>Nemotron Vision</strong>:</div>
+    <div>Target Grounding: <strong>${objName}</strong></div>
     <div class="raycast-card">
       <div class="raycast-header">
         <div class="raycast-title">
@@ -4898,7 +4909,7 @@ function renderRaycastResult(id, result) {
         <div class="raycast-body">
           <div class="raycast-desc">${desc}</div>
           <div class="raycast-meta">
-            <span class="raycast-tag">Vision: Nemotron-MiniCPM-V</span>
+            <span class="raycast-tag">${result.category || 'Historical Model'}</span>
             <span class="raycast-tag">Tavily Grounded</span>
           </div>
         </div>

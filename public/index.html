@@ -1,15 +1,19 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Splatris — Spatial AI & WebXR 3DGS Platform</title>
-  <meta name="description" content="Splatris Spatial AI Platform: End-to-end room video ingestion, Nemotron 3 Ultra orchestration, Nebius GPU 3DGS training runner, and WebXR Spatial Audio RAG.">
+  <meta name="description"
+    content="Splatris Spatial AI Platform: End-to-end room video ingestion, Nemotron 3 Ultra orchestration, Nebius GPU 3DGS training runner, and WebXR Spatial Audio RAG.">
 
   <!-- Google Fonts: Outfit & Inter -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet">
 
   <!-- Three.js and Controls (0.147.0 required for THREE.DataUtils.fromHalfFloat & GaussianSplats3D) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.147.0/three.min.js"></script>
@@ -19,7 +23,7 @@
   <script>
     // Defensive Polyfill for THREE.DataUtils.fromHalfFloat if missing
     if (window.THREE && window.THREE.DataUtils && !window.THREE.DataUtils.fromHalfFloat) {
-      window.THREE.DataUtils.fromHalfFloat = function(val) {
+      window.THREE.DataUtils.fromHalfFloat = function (val) {
         const exponent = (val & 0x7C00) >> 10;
         const fraction = val & 0x03FF;
         const sign = (val & 0x8000) ? -1 : 1;
@@ -34,6 +38,7 @@
 
   <link rel="stylesheet" href="style.css?v=20260924_space_immersive">
 </head>
+
 <body>
   <!-- 3D WebXR Viewport Container -->
   <div id="viewport-container">
@@ -44,7 +49,8 @@
         <div class="splat-loader-spinner"></div>
         <div class="splat-loader-text">
           <span id="splat-loader-title" class="splat-loader-title">Loading 3D Gaussian Splats...</span>
-          <span id="splat-loader-subtitle" class="splat-loader-subtitle">Downloading high-fidelity radiance fields</span>
+          <span id="splat-loader-subtitle" class="splat-loader-subtitle">Downloading high-fidelity radiance
+            fields</span>
         </div>
         <div class="splat-loader-bar-bg">
           <div id="splat-loader-bar" class="splat-loader-bar" style="width: 0%;"></div>
@@ -56,7 +62,8 @@
   <!-- Top Navigation / Header -->
   <header class="glass-header">
     <div class="brand-group">
-      <button id="btn-toggle-left-panel" class="btn-panel-toggle active" title="Toggle Space Ingestion Pipeline (Left Panel)" aria-label="Toggle left panel">
+      <button id="btn-toggle-left-panel" class="btn-panel-toggle active"
+        title="Toggle Space Ingestion Pipeline (Left Panel)" aria-label="Toggle left panel">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
           <line x1="9" y1="3" x2="9" y2="21"></line>
@@ -80,19 +87,21 @@
       <div class="status-indicator nemotron">
         <span>nvidia/Nemotron-3-Ultra</span>
       </div>
-      <button id="btn-toggle-right-panel" class="btn-panel-toggle active" title="Toggle Spatial Audio RAG (Right Panel)" aria-label="Toggle right panel">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-          <line x1="15" y1="3" x2="15" y2="21"></line>
-        </svg>
-      </button>
-      <button id="btn-webxr" class="btn-secondary vr-button" title="Enter WebXR Immersive Session on Meta Quest / Headset">
+      <button id="btn-webxr" class="btn-secondary vr-button"
+        title="Enter WebXR Immersive Session on Meta Quest / Headset">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"></path>
           <circle cx="9" cy="12" r="2"></circle>
           <circle cx="15" cy="12" r="2"></circle>
         </svg>
         <span>Enter WebXR</span>
+      </button>
+      <button id="btn-toggle-right-panel" class="btn-panel-toggle active" title="Toggle Spatial Audio RAG (Right Panel)"
+        aria-label="Toggle right panel">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+          <line x1="15" y1="3" x2="15" y2="21"></line>
+        </svg>
       </button>
     </div>
   </header>
@@ -116,7 +125,8 @@
       <div class="panel-body">
         <!-- 1. Video & Image Universal Dropzone -->
         <div id="video-dropzone" class="dropzone-box">
-          <input type="file" id="video-file-input" accept="video/mp4,video/quicktime,image/jpeg,image/png" class="file-input-hidden">
+          <input type="file" id="video-file-input" accept="video/mp4,video/quicktime,image/jpeg,image/png"
+            class="file-input-hidden">
           <div class="dropzone-content">
             <div class="dropzone-icon">
               <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -127,7 +137,8 @@
             </div>
             <div class="dropzone-text">
               <strong id="dropzone-title">Drop a walkthrough video or single object photo</strong>
-              <span id="dropzone-subtitle">Supports MP4/MOV walkthroughs (max 1GB) or JPG/PNG photos for Instant 3D scan</span>
+              <span id="dropzone-subtitle">Supports MP4/MOV walkthroughs (max 1GB) or JPG/PNG photos for Instant 3D
+                scan</span>
             </div>
           </div>
         </div>
@@ -145,8 +156,10 @@
             </span>
             <span id="method-selected-badge" class="badge-subtle">Standard 3DGS</span>
           </div>
-          <div class="segmented-control" id="training-method-selector" role="radiogroup" aria-label="Reconstruction Pipeline Method">
-            <button type="button" class="segmented-btn active" data-method="3dgs" role="radio" aria-checked="true" id="btn-method-3dgs" title="Standard 3D Gaussian Splatting (Nerfstudio Splatfacto)">
+          <div class="segmented-control" id="training-method-selector" role="radiogroup"
+            aria-label="Reconstruction Pipeline Method">
+            <button type="button" class="segmented-btn active" data-method="3dgs" role="radio" aria-checked="true"
+              id="btn-method-3dgs" title="Standard 3D Gaussian Splatting (Nerfstudio Splatfacto)">
               <span class="seg-radio-dot"></span>
               <div class="seg-info">
                 <div class="seg-title-row">
@@ -156,7 +169,8 @@
                 <span class="seg-desc">Default • Volumetric Splats (Nerfstudio)</span>
               </div>
             </button>
-            <button type="button" class="segmented-btn" data-method="triangle" role="radio" aria-checked="false" id="btn-method-triangle" title="Triangle Splatting: Mesh-based differentiable rasterization for WebXR">
+            <button type="button" class="segmented-btn" data-method="triangle" role="radio" aria-checked="false"
+              id="btn-method-triangle" title="Triangle Splatting: Mesh-based differentiable rasterization for WebXR">
               <span class="seg-radio-dot"></span>
               <div class="seg-info">
                 <div class="seg-title-row">
@@ -166,7 +180,8 @@
                 <span class="seg-desc">Mesh-based • WebXR Optimized</span>
               </div>
             </button>
-            <button type="button" class="segmented-btn" data-method="image2splat" role="radio" aria-checked="false" id="btn-method-image2splat" title="Instant Object: Single Image 3D Reconstruction via Image2Splat">
+            <button type="button" class="segmented-btn" data-method="image2splat" role="radio" aria-checked="false"
+              id="btn-method-image2splat" title="Instant Object: Single Image 3D Reconstruction via Image2Splat">
               <span class="seg-radio-dot"></span>
               <div class="seg-info">
                 <div class="seg-title-row">
@@ -189,16 +204,20 @@
             <span class="reprocess-timer-hint">&lt; 90s vs 5m</span>
           </div>
           <p class="reprocess-desc" id="reprocess-desc-text">
-            This scene (<strong id="reprocess-scene-name">Scene Video</strong>) is already processed. You can instantly convert it to <strong id="reprocess-target-name">Triangle Splatting</strong> (WebXR Optimized) without waiting for a new upload or initial processing.
+            This scene (<strong id="reprocess-scene-name">Scene Video</strong>) is already processed. You can instantly
+            convert it to <strong id="reprocess-target-name">Triangle Splatting</strong> (WebXR Optimized) without
+            waiting for a new upload or initial processing.
           </p>
           <div class="reprocess-actions-row">
             <button type="button" id="btn-reprocess-action" class="btn-reprocess-action">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
               </svg>
               <span id="btn-reprocess-label">Re-process as Triangle Splatting (Fast)</span>
             </button>
-            <button type="button" id="btn-reprocess-upload-new" class="btn-reprocess-secondary" title="Upload a brand new video instead of converting this scene">
+            <button type="button" id="btn-reprocess-upload-new" class="btn-reprocess-secondary"
+              title="Upload a brand new video instead of converting this scene">
               Upload New Video
             </button>
           </div>
@@ -232,15 +251,22 @@
         </div>
 
         <!-- 3b. Instant Object Vision RAG Fallback Input Card -->
-        <div id="instant-object-fallback-card" class="nemotron-card hidden" style="border: 1px solid rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.08); padding: 14px;">
+        <div id="instant-object-fallback-card" class="nemotron-card hidden"
+          style="border: 1px solid rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.08); padding: 14px;">
           <div class="nemotron-card-header" style="margin-bottom: 8px;">
-            <span class="nemotron-pill" style="background: rgba(245, 158, 11, 0.25); color: #fbbf24;">Vision RAG Clarification</span>
+            <span class="nemotron-pill" style="background: rgba(245, 158, 11, 0.25); color: #fbbf24;">Vision RAG
+              Clarification</span>
             <span class="badge-mini" style="background: rgba(245, 158, 11, 0.3); color: #fde68a;">Manual Input</span>
           </div>
-          <p id="fallback-prompt-text" style="margin: 0 0 10px 0; font-size: 13px; color: #fef3c7; font-weight: 500;">Could not clearly identify the object. What is this?</p>
+          <p id="fallback-prompt-text" style="margin: 0 0 10px 0; font-size: 13px; color: #fef3c7; font-weight: 500;">
+            Could not clearly identify the object. What is this?</p>
           <div style="display: flex; gap: 8px;">
-            <input type="text" id="input-manual-object-name" class="glass-input" placeholder="e.g. Modern Accent Chair, Coffee Maker..." style="flex: 1; font-size: 13px; padding: 7px 12px; background: rgba(0,0,0,0.4); border-color: rgba(245, 158, 11, 0.4); color: #fff;">
-            <button type="button" id="btn-confirm-object-name" class="btn-primary" style="padding: 7px 14px; font-size: 12px; white-space: nowrap; background: #d97706; border-color: #f59e0b;">Search & Guide</button>
+            <input type="text" id="input-manual-object-name" class="glass-input"
+              placeholder="e.g. Modern Accent Chair, Coffee Maker..."
+              style="flex: 1; font-size: 13px; padding: 7px 12px; background: rgba(0,0,0,0.4); border-color: rgba(245, 158, 11, 0.4); color: #fff;">
+            <button type="button" id="btn-confirm-object-name" class="btn-primary"
+              style="padding: 7px 14px; font-size: 12px; white-space: nowrap; background: #d97706; border-color: #f59e0b;">Search
+              & Guide</button>
           </div>
         </div>
 
@@ -258,16 +284,20 @@
             <span id="progress-timer">0s</span>
           </div>
           <div class="progress-actions">
-            <button id="btn-cancel-upload" class="btn-cancel-upload hidden" type="button" title="Stop uploading video and reset pipeline">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <button id="btn-cancel-upload" class="btn-cancel-upload hidden" type="button"
+              title="Stop uploading video and reset pipeline">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="15" y1="9" x2="9" y2="15"></line>
                 <line x1="9" y1="9" x2="15" y2="15"></line>
               </svg>
               <span>Stop / Cancel Upload</span>
             </button>
-            <button id="btn-abort-job" class="btn-abort hidden" type="button" title="Immediately cancel training and release GPU compute resources">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <button id="btn-abort-job" class="btn-abort hidden" type="button"
+              title="Immediately cancel training and release GPU compute resources">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
                 <line x1="15" y1="9" x2="9" y2="15"></line>
                 <line x1="9" y1="9" x2="15" y2="15"></line>
@@ -282,24 +312,29 @@
           <div class="suspended-header">
             <div class="suspended-icon">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z">
+                </path>
                 <line x1="12" y1="9" x2="12" y2="13"></line>
                 <line x1="12" y1="17" x2="12.01" y2="17"></line>
               </svg>
             </div>
             <div class="suspended-title-wrap">
               <strong>GPU Instance Preempted / Offline</strong>
-              <span id="gpu-suspended-detail">Connection timed out to remote worker. Your reconstruction progress and camera poses are safely preserved.</span>
+              <span id="gpu-suspended-detail">Connection timed out to remote worker. Your reconstruction progress and
+                camera poses are safely preserved.</span>
             </div>
           </div>
           <div class="suspended-actions">
-            <button type="button" id="btn-resume-training" class="btn-resume-action" title="Resume training using cached camera poses on Nebius GPU">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <button type="button" id="btn-resume-training" class="btn-resume-action"
+              title="Resume training using cached camera poses on Nebius GPU">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+                stroke-linecap="round" stroke-linejoin="round">
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
               </svg>
               <span id="btn-resume-label">Resume Training</span>
             </button>
-            <button type="button" id="btn-abort-suspended" class="btn-abort" style="width: auto; padding: 7px 12px;" title="Cancel this job and reset">
+            <button type="button" id="btn-abort-suspended" class="btn-abort" style="width: auto; padding: 7px 12px;"
+              title="Cancel this job and reset">
               Cancel
             </button>
           </div>
@@ -309,18 +344,24 @@
         <div class="recent-history-section">
           <!-- Section A: Recent Spaces (Video) -->
           <div class="recent-scenes-widget" id="section-recent-spaces">
-            <div class="control-label flex-between recent-accordion-header" id="header-recent-spaces" title="Toggle Recent Spaces list">
+            <div class="control-label flex-between recent-accordion-header" id="header-recent-spaces"
+              title="Toggle Recent Spaces list">
               <span class="flex-align-center">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px; color: var(--cyan);">
-                  <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  style="margin-right: 6px; color: var(--cyan);">
+                  <path
+                    d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z">
+                  </path>
                   <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
                   <line x1="12" y1="22.08" x2="12" y2="12"></line>
                 </svg>
-                Recent Spaces <span class="badge-pipeline-tag badge-3dgs" style="margin-left: 5px; font-size: 0.6rem; padding: 1px 5px;">Video</span>
+                Recent Spaces <span class="badge-pipeline-tag badge-3dgs"
+                  style="margin-left: 5px; font-size: 0.6rem; padding: 1px 5px;">Video</span>
               </span>
               <div class="flex-align-center" style="gap: 5px;">
                 <span id="recent-spaces-count" class="badge-subtle">0</span>
-                <svg class="accordion-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg class="accordion-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2">
                   <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
               </div>
@@ -332,17 +373,21 @@
 
           <!-- Section B: Recent Objects (Photo) -->
           <div class="recent-scenes-widget" id="section-recent-objects">
-            <div class="control-label flex-between recent-accordion-header" id="header-recent-objects" title="Toggle Recent Objects list">
+            <div class="control-label flex-between recent-accordion-header" id="header-recent-objects"
+              title="Toggle Recent Objects list">
               <span class="flex-align-center">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 6px; color: #f472b6;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                  style="margin-right: 6px; color: #f472b6;">
                   <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
                   <circle cx="12" cy="13" r="4"></circle>
                 </svg>
-                Recent Objects <span class="badge-pipeline-tag badge-image" style="margin-left: 5px; font-size: 0.6rem; padding: 1px 5px;">Photo</span>
+                Recent Objects <span class="badge-pipeline-tag badge-image"
+                  style="margin-left: 5px; font-size: 0.6rem; padding: 1px 5px;">Photo</span>
               </span>
               <div class="flex-align-center" style="gap: 5px;">
                 <span id="recent-objects-count" class="badge-subtle">0</span>
-                <svg class="accordion-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <svg class="accordion-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" stroke-width="2">
                   <polyline points="6 9 12 15 18 9"></polyline>
                 </svg>
               </div>
@@ -358,7 +403,8 @@
           <div class="control-label">Viewport Modes</div>
           <div class="btn-group-row">
             <button id="btn-free-roam" class="btn-chip" title="Enter First-Person Free Roam (WASD)">Free Roam</button>
-            <button id="btn-fly-cam" class="btn-chip" title="Toggle Turntable Spin around Vertical Axis (Auto Rotate)">Turntable</button>
+            <button id="btn-fly-cam" class="btn-chip"
+              title="Toggle Turntable Spin around Vertical Axis (Auto Rotate)">Turntable</button>
             <button id="btn-reset-cam" class="btn-chip" title="Reset View and Center on Object">Center View</button>
             <button id="btn-toggle-points" class="btn-chip active" title="Toggle Gaussian Glow">Splat Glow</button>
           </div>
@@ -378,7 +424,8 @@
       </button>
 
       <!-- 3-Axis Free Rotation (Trackball) vs Grounded Orbit Toggle -->
-      <button id="btn-toggle-trackball" class="btn-overlay-chip" title="Toggle 3-Axis Free Rotation across Pitch (X), Yaw (Y), and Roll (Z)">
+      <button id="btn-toggle-trackball" class="btn-overlay-chip"
+        title="Toggle 3-Axis Free Rotation across Pitch (X), Yaw (Y), and Roll (Z)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"></circle>
           <ellipse cx="12" cy="12" rx="10" ry="4"></ellipse>
@@ -387,14 +434,16 @@
         <span id="btn-trackball-text">3-Axis Free</span>
       </button>
 
-      <button id="btn-turntable-spin" class="btn-overlay-chip" title="Toggle Turntable Spin around Vertical Axis (Shortcut: Space)">
+      <button id="btn-turntable-spin" class="btn-overlay-chip"
+        title="Toggle Turntable Spin around Vertical Axis (Shortcut: Space)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
         </svg>
         <span id="btn-turntable-text">Turntable Spin</span>
       </button>
 
-      <button id="btn-rotate-left" class="btn-overlay-chip btn-icon-only" title="Rotate Object Left 15° around Vertical Axis (Shortcut: Q or Left Arrow)">
+      <button id="btn-rotate-left" class="btn-overlay-chip btn-icon-only"
+        title="Rotate Object Left 15° around Vertical Axis (Shortcut: Q or Left Arrow)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="1 4 1 10 7 10"></polyline>
           <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
@@ -402,7 +451,8 @@
         <span>↺ -15°</span>
       </button>
 
-      <button id="btn-rotate-right" class="btn-overlay-chip btn-icon-only" title="Rotate Object Right 15° around Vertical Axis (Shortcut: E or Right Arrow)">
+      <button id="btn-rotate-right" class="btn-overlay-chip btn-icon-only"
+        title="Rotate Object Right 15° around Vertical Axis (Shortcut: E or Right Arrow)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <polyline points="23 4 23 10 17 10"></polyline>
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
@@ -410,7 +460,8 @@
         <span>↻ +15°</span>
       </button>
 
-      <button id="btn-inspect-raycast" class="btn-overlay-chip" title="Double-Click anywhere on model or click here to Inspect Object (Vision + Tavily RAG)">
+      <button id="btn-inspect-raycast" class="btn-overlay-chip"
+        title="Double-Click anywhere on model or click here to Inspect Object (Vision + Tavily RAG)">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"></circle>
           <circle cx="12" cy="12" r="6"></circle>
@@ -419,7 +470,8 @@
         <span>Inspect 🎯</span>
       </button>
 
-      <button id="btn-reset-rotation" class="btn-overlay-chip btn-icon-only" title="Reset Rotation to 0° & Center View (Shortcut: R)">
+      <button id="btn-reset-rotation" class="btn-overlay-chip btn-icon-only"
+        title="Reset Rotation to 0° & Center View (Shortcut: R)">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <circle cx="12" cy="12" r="10"></circle>
           <polyline points="12 6 12 12 16 14"></polyline>
@@ -441,15 +493,11 @@
         </div>
         <h2>Spatial Audio RAG</h2>
         <span class="badge ai">Tavily + Nemotron</span>
-        <button id="btn-collapse-right-panel" class="btn-panel-corner-toggle" title="Collapse Spatial Audio RAG" aria-label="Collapse Spatial Audio RAG">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="9 18 15 12 9 6"></polyline>
-          </svg>
-        </button>
       </div>
 
       <div class="panel-body">
-        <p class="panel-desc">Voice & text Q&A grounded in your reconstructed space. Audio is positioned via 3D Web Audio spatial panners.</p>
+        <p class="panel-desc">Voice & text Q&A grounded in your reconstructed space. Audio is positioned via 3D Web
+          Audio spatial panners.</p>
 
         <!-- Spatial Audio Panner Indicator -->
         <div class="audio-hud-card">
@@ -463,7 +511,8 @@
             </div>
           </div>
           <button id="btn-toggle-audio" class="btn-icon" title="Toggle Spatial Audio Synthesis">
-            <svg id="icon-sound-on" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <svg id="icon-sound-on" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2">
               <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
               <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
             </svg>
@@ -472,9 +521,14 @@
 
         <!-- Quick Query Presets -->
         <div id="rag-presets" class="preset-chips">
-          <button class="chip-query" data-query="Explain the 3D Gaussian Splatting representation of this space">Space Geometry</button>
-          <button class="chip-query" data-query="What camera trajectory and COLMAP matcher were selected by Nemotron?">Reconstruction Method</button>
-          <button class="chip-query" data-query="Analyze the spatial density, lighting, and focal point of the space">Spatial Lighting & Focal Point</button>
+          <button class="chip-query" data-query="Explain the 3D Gaussian Splatting representation of this space">Space
+            Geometry</button>
+          <button class="chip-query"
+            data-query="What camera trajectory and COLMAP matcher were selected by Nemotron?">Reconstruction
+            Method</button>
+          <button class="chip-query"
+            data-query="Analyze the spatial density, lighting, and focal point of the space">Spatial Lighting & Focal
+            Point</button>
         </div>
 
         <!-- Chat / Response Log -->
@@ -492,7 +546,8 @@
 
         <!-- Input Box -->
         <form id="rag-form" class="rag-input-box">
-          <input type="text" id="rag-input" class="glass-input rag-text" placeholder="Ask anything about this space..." autocomplete="off">
+          <input type="text" id="rag-input" class="glass-input rag-text" placeholder="Ask anything about this space..."
+            autocomplete="off">
           <button type="submit" id="btn-send-rag" class="btn-send" title="Send spatial query">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="22" y1="2" x2="11" y2="13"></line>
@@ -502,18 +557,11 @@
         </form>
       </div>
     </aside>
-
-    <!-- Floating Expand Button for Right Panel when collapsed -->
-    <button id="btn-expand-right-panel" class="floating-panel-expand-btn right-floating-btn" title="Expand Spatial Audio RAG" aria-label="Expand Spatial Audio RAG">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="15 18 9 12 15 6"></polyline>
-      </svg>
-      <span class="floating-btn-text">Spatial Audio RAG</span>
-    </button>
   </main>
 
   <!-- Pre-Flight AI Video Quality Audit Modal -->
-  <div id="quality-audit-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="audit-modal-title">
+  <div id="quality-audit-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true"
+    aria-labelledby="audit-modal-title">
     <div class="audit-modal-card glass-modal">
       <div class="modal-header">
         <div class="modal-title-group">
@@ -542,7 +590,8 @@
           <div class="gauge-container">
             <svg class="circular-gauge" viewBox="0 0 120 120" width="110" height="110">
               <circle class="gauge-bg" cx="60" cy="60" r="50" fill="none" stroke-width="9"></circle>
-              <circle id="audit-gauge-fill" class="gauge-fill" cx="60" cy="60" r="50" fill="none" stroke-width="9" stroke-dasharray="314.159" stroke-dashoffset="78.5"></circle>
+              <circle id="audit-gauge-fill" class="gauge-fill" cx="60" cy="60" r="50" fill="none" stroke-width="9"
+                stroke-dasharray="314.159" stroke-dashoffset="78.5"></circle>
             </svg>
             <div class="gauge-center">
               <span id="audit-score-num" class="score-value">85%</span>
@@ -557,7 +606,8 @@
             </div>
             <h3 id="audit-summary-title" class="summary-heading">Ready for 3D Reconstruction</h3>
             <p id="audit-summary-desc" class="summary-description">
-              The camera trajectory exhibits steady visual overlap, sufficient parallax displacement, and stable exposure for COLMAP point cloud generation.
+              The camera trajectory exhibits steady visual overlap, sufficient parallax displacement, and stable
+              exposure for COLMAP point cloud generation.
             </p>
           </div>
         </div>
@@ -650,7 +700,8 @@
   </div>
 
   <!-- Frame Inspection Lightbox Modal -->
-  <div id="frame-lightbox-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="lightbox-type">
+  <div id="frame-lightbox-modal" class="modal-backdrop hidden" role="dialog" aria-modal="true"
+    aria-labelledby="lightbox-type">
     <div class="lightbox-card glass-modal">
       <div class="lightbox-header">
         <div class="lightbox-title-group">
@@ -679,18 +730,21 @@
   <!-- Bottom HUD Status Bar -->
   <footer class="glass-footer">
     <div class="footer-left">
-      <span class="stat-pill"><strong id="stat-splat-count">12,000</strong> <span id="stat-splat-unit">Gaussians</span></span>
+      <span class="stat-pill"><strong id="stat-splat-count">12,000</strong> <span
+          id="stat-splat-unit">Gaussians</span></span>
       <span class="stat-pill">FPS: <strong id="stat-fps">60</strong></span>
       <span class="stat-pill">Active Scene: <strong id="stat-model-name">scene.splat</strong></span>
     </div>
     <div class="footer-center">
-      <span id="instruction-hint" class="instruction-hint">Left Drag: Orbit (Rotate View) • Alt/Shift Drag: Spin Object • [Q]/[E] or Arrows: Rotate Object • [Space]: Turntable</span>
+      <span id="instruction-hint" class="instruction-hint">Left Drag: Orbit (Rotate View) • Alt/Shift Drag: Spin Object
+        • [Q]/[E] or Arrows: Rotate Object • [Space]: Turntable</span>
     </div>
     <div class="footer-right">
       <span id="branding-tag" class="branding-tag">Hardware Accelerated • Splatris Engine</span>
     </div>
   </footer>
 
-  <script src="app.js?v=20261005_xr_vision_v4"></script>
+  <script src="app.js?v=20261005_rag_fix_v2"></script>
 </body>
+
 </html>
