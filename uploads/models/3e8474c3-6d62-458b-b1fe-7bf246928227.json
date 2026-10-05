@@ -1,0 +1,8 @@
+{
+  "jobId": "3e8474c3-6d62-458b-b1fe-7bf246928227",
+  "originalFilename": "frame_0001.jpg",
+  "deviceName": "Instant Object (Single Image)",
+  "uploadTimestamp": "2026-09-29T09:10:12.001Z",
+  "trainingMethod": "image2splat",
+  "completedAt": "2026-09-29T09:12:09.132Z"
+}

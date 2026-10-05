@@ -1,6 +1,16 @@
 node_modules/
 .env
 .DS_Store
-uploads/
+uploads/*.mp4
+uploads/*.mov
+uploads/*.avi
+uploads/*.jpg
+uploads/*.jpeg
+uploads/*.png
+uploads/frames/
+uploads/audit/
+uploads/models/*.ply
+uploads/models/*.splat.bak
+uploads/models/*.chunks.bin
 __pycache__/
 *.pyc
