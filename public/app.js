@@ -4545,7 +4545,9 @@ function performRaycastSelection(mouseNdc, screenX, screenY) {
 let xrHudMesh = null;
 let xrHudCanvas = null;
 let xrHudTexture = null;
-let lastHudContent = { title: '', subtitle: '', status: '' };
+let lastHudContent = { title: '', subtitle: '', status: '', image: null };
+let activeHudImage = null;
+let activeHudImageSrc = null;
 
 function prependAudioBlockedToHud() {
   if (lastHudContent && lastHudContent.status) {
@@ -4555,6 +4557,7 @@ function prependAudioBlockedToHud() {
         title: lastHudContent.title,
         subtitle: lastHudContent.subtitle,
         status: blockedStatus,
+        image: lastHudContent.image,
       });
     }
   }
@@ -4590,9 +4593,38 @@ function createXRInWorldHUD() {
   return xrHudMesh;
 }
 
-function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = '' } = {}) {
-  lastHudContent = { title, subtitle, status };
+function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = '', image = null } = {}) {
+  if (image !== undefined && image !== null) {
+    if (typeof image === 'string' && image.length > 50) {
+      if (image !== activeHudImageSrc) {
+        activeHudImageSrc = image;
+        const img = new Image();
+        img.onload = () => {
+          activeHudImage = img;
+          renderXRHUDCanvas();
+        };
+        img.onerror = () => {
+          activeHudImage = null;
+          renderXRHUDCanvas();
+        };
+        img.src = image;
+      }
+    }
+  } else if (title === 'SPLATRIS WEBXR') {
+    activeHudImage = null;
+    activeHudImageSrc = null;
+  }
+
+  lastHudContent = { title, subtitle, status, image: image || activeHudImageSrc };
+  renderXRHUDCanvas();
+}
+
+function renderXRHUDCanvas() {
   if (!xrHudCanvas || !xrHudTexture || !xrHudMesh) return;
+
+  const title = lastHudContent.title || 'SPLATRIS WEBXR';
+  const subtitle = lastHudContent.subtitle || '';
+  const status = lastHudContent.status || '';
 
   const canvasWidth = 512;
   const paddingX = 24;
@@ -4633,12 +4665,14 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
     ];
   }
 
-  // Calculate dynamic canvas height based on wrapped lines
+  // Calculate dynamic canvas height based on wrapped lines + optional image thumbnail
   const lineHeight = 26;
   const topHeaderHeight = subtitle ? 96 : 72;
-  const textContentHeight = Math.max(90, lines.length * lineHeight + 18);
+  const hasImage = Boolean(activeHudImage && activeHudImage.complete && activeHudImage.naturalWidth > 0);
+  const imgSectionHeight = hasImage ? 172 : 0;
+  const textContentHeight = Math.max(80, lines.length * lineHeight + 18);
   const exitButtonHeight = 56;
-  const totalCanvasHeight = Math.max(340, Math.min(1400, topHeaderHeight + textContentHeight + exitButtonHeight + 36));
+  const totalCanvasHeight = Math.max(340, Math.min(1400, topHeaderHeight + imgSectionHeight + textContentHeight + exitButtonHeight + 36));
 
   xrHudCanvas.width = canvasWidth;
   xrHudCanvas.height = totalCanvasHeight;
@@ -4674,10 +4708,57 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
     ctx.fillText(subtitle.slice(0, 48), paddingX, 78);
   }
 
+  let curY = topHeaderHeight + 10;
+
+  // Render Captured Image Thumbnail in 3D HUD if available
+  if (hasImage) {
+    const imgW = canvasWidth - (paddingX * 2);
+    const imgH = 150;
+    const imgX = paddingX;
+    const imgY = curY;
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(imgX, imgY, imgW, imgH, 12);
+    ctx.clip();
+
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(imgX, imgY, imgW, imgH);
+
+    // Center and scale image with cover aspect ratio
+    const nw = activeHudImage.naturalWidth;
+    const nh = activeHudImage.naturalHeight;
+    const r = Math.max(imgW / nw, imgH / nh);
+    const nwScaled = nw * r;
+    const nhScaled = nh * r;
+    const ox = imgX + (imgW - nwScaled) / 2;
+    const oy = imgY + (imgH - nhScaled) / 2;
+    ctx.drawImage(activeHudImage, ox, oy, nwScaled, nhScaled);
+
+    ctx.restore();
+
+    // Cyan glowing border around thumbnail
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(56, 189, 248, 0.55)';
+    ctx.beginPath();
+    ctx.roundRect(imgX, imgY, imgW, imgH, 12);
+    ctx.stroke();
+
+    // Badge label: "📷 CAPTURED TARGET"
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.90)';
+    ctx.beginPath();
+    ctx.roundRect(imgX + 8, imgY + 8, 155, 24, 6);
+    ctx.fill();
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText('📷 CAPTURED TARGET', imgX + 16, imgY + 24);
+
+    curY += imgH + 20;
+  }
+
   // Body text lines
   ctx.fillStyle = '#e2e8f0';
   ctx.font = '16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-  let curY = topHeaderHeight + 14;
   for (const line of lines) {
     if (line) {
       ctx.fillText(line, paddingX, curY);
@@ -4701,8 +4782,7 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
   ctx.fillText('🚪 Click or Press [ B / Y ] to Exit WebXR', canvasWidth / 2, btnY + 28);
   ctx.textAlign = 'left';
 
-  // Action: Scale the PlaneGeometry proportionally based on the wrapped canvas:
-  // hud.scale.set(0.4, 0.4 * (canvas.height / canvas.width), 1);
+  // Action: Scale the PlaneGeometry proportionally based on the wrapped canvas
   if (!xrHudMesh.geometry) {
     xrHudMesh.geometry = new THREE.PlaneGeometry(1, 1);
   }
@@ -4710,6 +4790,8 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
   if (xrHudMesh.material) {
     xrHudMesh.material.depthTest = false;
     xrHudMesh.material.depthWrite = false;
+    xrHudMesh.material.map = xrHudTexture;
+    xrHudMesh.material.needsUpdate = true;
   }
   xrHudMesh.renderOrder = 999;
   xrHudTexture.needsUpdate = true;
@@ -4926,12 +5008,21 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
       title: 'ERROR',
       subtitle: 'Image capture failed',
       status: 'Error: Failed to capture object image.',
+      image: null,
     });
     updateChatMessage(typingId, '⚠️ Error: Failed to capture object image.', []);
     showToast('⚠️ Error: Failed to capture object image.', 'error', 3500);
     unlockRaycastQuery();
     return;
   }
+
+  // In WebXR: Display the captured target image immediately in the 3D HUD!
+  updateXRHUDContent({
+    title: 'SCANNING OBJECT...',
+    subtitle: `Point: (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)})`,
+    status: 'Captured 3D object image. Analyzing via Nemotron Vision & Tavily...',
+    image: imageBase64,
+  });
 
   try {
     const camPos = new THREE.Vector3();
@@ -4999,12 +5090,13 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
       updateQueryChipsForObject(res.objectName);
     }
 
-    // In WebXR: Update floating HUD with object name and concise summary
+    // In WebXR: Update floating HUD with object name, concise summary, and the captured image!
     const summaryText = res.tavilyData?.summary || res.tavilyGrounding?.summary || res.visualDescription || '';
     updateXRHUDContent({
       title: (res.objectName || 'OBJECT IDENTIFIED').toUpperCase(),
       subtitle: `${res.category || 'Spatial Element'} • ${Math.round((res.confidence || 0.9) * 100)}% Match`,
       status: summaryText,
+      image: res.cropUrl || imageBase64,
     });
 
     // Dynamic spatial speech narration positioned at the object
@@ -5024,7 +5116,8 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
     updateXRHUDContent({
       title: 'ERROR',
       subtitle: 'Could not identify object',
-      status: 'Error: Could not identify object.',
+      status: `Error: ${err.message || 'Could not identify object.'}`,
+      image: imageBase64,
     });
     unlockRaycastQuery();
   }

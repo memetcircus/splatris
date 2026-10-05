@@ -159,6 +159,7 @@ export async function enrichWithTavily(objectName) {
         include_answer: true,
         max_results: 4,
       }),
+      signal: AbortSignal.timeout(6000),
     });
 
     if (!response.ok) {
@@ -259,8 +260,19 @@ export async function cropAndIdentifyObject({ point, activeModel, cameraPosition
 
       console.log(`[SpatialRaycast] Resolved object name: "${objectName}" (confidence: ${visionResult.confidence}, category: ${visionResult.category})`);
 
-      // Enrich identified object with Tavily Real-World Knowledge API
-      const tavilyData = await enrichWithTavily(objectName);
+      // Enrich identified object with Tavily Real-World Knowledge API (with timeout guard)
+      let tavilyData = null;
+      try {
+        tavilyData = await enrichWithTavily(objectName);
+      } catch (tavilyErr) {
+        console.warn(`[SpatialRaycast] Tavily enrichment error for ${objectName}:`, tavilyErr.message);
+        tavilyData = {
+          success: false,
+          objectName,
+          summary: `Identified 3D object: ${objectName}.`,
+          results: [],
+        };
+      }
 
       return {
         success: true,
