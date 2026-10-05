@@ -163,7 +163,7 @@ router.post('/upload', handleUpload, async (req, res) => {
     const metadata = metadataForFps;
 
     // Persist upload video metadata sidecar for downstream job association
-    await fs.mkdir(targetFramesDir, { recursive: true }).catch(() => {});
+    await fs.mkdir(targetFramesDir, { recursive: true }).catch(() => { });
     await fs.writeFile(
       path.join(targetFramesDir, 'video_meta.json'),
       JSON.stringify({
@@ -173,7 +173,7 @@ router.post('/upload', handleUpload, async (req, res) => {
         uploadTimestamp: new Date().toISOString(),
         metadata: metadataForFps,
       }, null, 2)
-    ).catch(() => {});
+    ).catch(() => { });
 
     // 5. Format relative paths for client consumption
     const relativeVideoPath = path.relative(process.cwd(), videoPath);
@@ -287,7 +287,7 @@ router.post('/instant-object/identify', async (req, res) => {
           await fs.access(c);
           imagePath = c;
           break;
-        } catch {}
+        } catch { }
       }
     }
 
@@ -364,13 +364,13 @@ router.post('/instant-object/tavily-enrich', async (req, res) => {
  */
 router.post('/raycast-object', async (req, res) => {
   try {
-    const { point, activeModel, cameraPosition, imageBase64, videoId, isWebXR, sceneName } = req.body || {};
+    const { point, activeModel, cameraPosition, imageBase64, videoId, isWebXR, sceneName, objectName } = req.body || {};
     if (!point || typeof point.x !== 'number') {
       return res.status(400).json({ success: false, error: 'Invalid 3D intersection point coordinates.' });
     }
 
-    console.log(`[SpatialRaycast] Query received for 3D point (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)}) on model ${activeModel} (isWebXR: ${Boolean(isWebXR)}, has viewport capture: ${Boolean(imageBase64)})`);
-    const result = await cropAndIdentifyObject({ point, activeModel, cameraPosition, imageBase64, videoId, isWebXR, sceneName });
+    console.log(`[SpatialRaycast] Query received for 3D point (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)}) on model ${activeModel} (isWebXR: ${Boolean(isWebXR)}, objectName: "${objectName || ''}")`);
+    const result = await cropAndIdentifyObject({ point, activeModel, cameraPosition, imageBase64, videoId, isWebXR, sceneName, targetObjectName: objectName });
     res.json(result);
   } catch (err) {
     console.error('[SpatialRaycast] Error handling 3D point query:', err);

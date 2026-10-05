@@ -23,7 +23,7 @@
   <script>
     // Defensive Polyfill for THREE.DataUtils.fromHalfFloat if missing
     if (window.THREE && window.THREE.DataUtils && !window.THREE.DataUtils.fromHalfFloat) {
-      window.THREE.DataUtils.fromHalfFloat = function (val) {
+      window.THREE.DataUtils.fromHalfFloat = function  (val) {
         const exponent = (val & 0x7C00) >> 10;
         const fraction = val & 0x03FF;
         const sign = (val & 0x8000) ? -1 : 1;
@@ -87,15 +87,6 @@
       <div class="status-indicator nemotron">
         <span>nvidia/Nemotron-3-Ultra</span>
       </div>
-      <button id="btn-webxr" class="btn-secondary vr-button"
-        title="Enter WebXR Immersive Session on Meta Quest / Headset">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"></path>
-          <circle cx="9" cy="12" r="2"></circle>
-          <circle cx="15" cy="12" r="2"></circle>
-        </svg>
-        <span>Enter WebXR</span>
-      </button>
       <button id="btn-toggle-right-panel" class="btn-panel-toggle active" title="Toggle Spatial Audio RAG (Right Panel)"
         aria-label="Toggle right panel">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -103,6 +94,22 @@
           <line x1="15" y1="3" x2="15" y2="21"></line>
         </svg>
       </button>
+      <div class="webxr-onboarding-wrapper" style="display: flex; align-items: center; gap: 8px;">
+        <div class="vr-controls-hint" title="Quest VR Controller Guide">
+          <span style="color: #38bdf8; font-weight: 600;">VR Controls:</span>
+          <span>Pull <strong style="color: #f8fafc;">TRIGGER</strong> to scan objects &amp; hear history. Press <strong
+              style="color: #f8fafc;">GRIP</strong> to hide/show the info panel.</span>
+        </div>
+        <button id="btn-webxr" class="btn-secondary vr-button"
+          title="Enter WebXR Immersive Session on Meta Quest / Headset">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8z"></path>
+            <circle cx="9" cy="12" r="2"></circle>
+            <circle cx="15" cy="12" r="2"></circle>
+          </svg>
+          <span>Enter WebXR</span>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -744,7 +751,7 @@
     </div>
   </footer>
 
-  <script src="app.js?v=20261005_xr_hang_fix_v5"></script>
+  <script src="app.js?v=20260930_clean_copy_v1"></script>
 </body>
 
 </html>

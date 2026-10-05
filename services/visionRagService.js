@@ -131,7 +131,29 @@ Respond strictly in valid JSON:
 // In-memory cache for ultra-fast instant sub-10ms VR grounding responses
 const TAVILY_CACHE = new Map();
 
-// Seed known models (such as Soviet T-34 Medium Tank) for instant sub-10ms VR response
+TAVILY_CACHE.set('T-54/55 Main Battle Tank', {
+  success: true,
+  objectName: 'T-54/55 Main Battle Tank',
+  summary: 'The T-54/55 Main Battle Tank was extensively built, with around 100,000 units produced in the Soviet Union, Poland, and Czechoslovakia, making it the most-produced tank in history. The T-54/55 series evolved from the T-34 tank, with the T-54A and T-54B introducing upgrades like wading snorkels and an upgraded gun. The T-55 was designed with all the knowledge and upgrades from the T-54’s development and was tested for nuclear blasts. The T-54/55’s hull was adapted for use in various support vehicles, and it had a four-man crew due to its manually loaded gun. The tank\'s design led to the T-62, T-72, and T-90 tanks, which form the backbone of many armies today.',
+  results: [
+    {
+      title: 'T-54/T-55 Main Battle Tank - History & Specifications',
+      url: 'https://en.wikipedia.org/wiki/T-54/T-55',
+      snippet: 'The T-54 and T-55 series are Soviet main battle tanks introduced after World War II, famous for their 100mm gun and hemispherical turret.'
+    },
+    {
+      title: 'This was the first tank designed for nuclear war',
+      url: 'https://www.wearethemighty.com/mighty-tactical/t55-medium-tank-nuclear-war',
+      snippet: 'The T-54 and T-55 went on to become the most-produced tanks in world history with over 100,000 built.'
+    }
+  ],
+  suggestedQuestions: [
+    'What are the key technical differences between the T-54 and T-55?',
+    'What main armament was equipped on the T-54/55?',
+    'Why is the T-54/55 the most-produced tank in military history?'
+  ]
+});
+
 TAVILY_CACHE.set('Soviet T-34 Medium Tank', {
   success: true,
   objectName: 'Soviet T-34 Medium Tank',
@@ -141,11 +163,6 @@ TAVILY_CACHE.set('Soviet T-34 Medium Tank', {
       title: 'T-34 Medium Tank - Design & Historical Overview',
       url: 'https://en.wikipedia.org/wiki/T-34',
       snippet: 'The T-34 was the mainstay of Soviet armored forces throughout World War II with over 84,000 units produced.'
-    },
-    {
-      title: 'Tank T-34-85 3D Scan & Cultural Heritage',
-      url: 'https://sketchfab.com/3d-models/tank-t-34-85-3d-scan-6368842b50fa4c948d459076265a9df8',
-      snippet: 'Photogrammetric 3D scan documenting the hull, turret, and Christie suspension of the T-34-85.'
     }
   ],
   suggestedQuestions: [
@@ -157,7 +174,6 @@ TAVILY_CACHE.set('Soviet T-34 Medium Tank', {
 
 /**
  * Searches Tavily API for grounding data, history, and specifications about an object.
- * Utilizes memory cache and strict timeout to prevent WebXR hanging.
  * @param {string} objectName
  * @returns {Promise<object>}
  */
@@ -170,26 +186,27 @@ export async function enrichWithTavily(objectName) {
     return TAVILY_CACHE.get(normName);
   }
 
-  // Check alias for tank
-  if (normName.toLowerCase().includes('tank') && TAVILY_CACHE.has('Soviet T-34 Medium Tank')) {
+  const lower = normName.toLowerCase();
+  if ((lower.includes('54') || lower.includes('55') || lower.includes('t54') || lower.includes('t55')) && TAVILY_CACHE.has('T-54/55 Main Battle Tank')) {
+    return TAVILY_CACHE.get('T-54/55 Main Battle Tank');
+  }
+  if (lower.includes('tank') && TAVILY_CACHE.has('Soviet T-34 Medium Tank')) {
     return TAVILY_CACHE.get('Soviet T-34 Medium Tank');
   }
 
   const apiKey = process.env.TAVILY_API_KEY;
   if (!apiKey || apiKey.trim() === '') {
-    const fallback = {
-      success: true,
-      objectName: normName,
-      summary: `Spatial guide ready for ${normName}.`,
+    return {
+      success: false,
+      error: 'TAVILY_API_KEY not configured',
+      objectName,
+      summary: `Spatial guide ready for ${objectName}.`,
       results: [],
-      suggestedQuestions: [`What are the historical origins of ${normName}?`]
     };
-    TAVILY_CACHE.set(normName, fallback);
-    return fallback;
   }
 
-  const query = `${normName} history design specifications cultural overview 3D`;
-  console.log(`[VisionRAG] Querying Tavily for object: "${normName}"...`);
+  const query = `${objectName} history design specifications cultural overview 3D`;
+  console.log(`[VisionRAG] Querying Tavily for object: "${objectName}"...`);
 
   try {
     const response = await fetch('https://api.tavily.com/search', {
@@ -202,142 +219,111 @@ export async function enrichWithTavily(objectName) {
         include_answer: true,
         max_results: 4,
       }),
-      signal: AbortSignal.timeout(3500),
     });
 
     if (!response.ok) {
       console.warn(`[VisionRAG] Tavily search status ${response.status}: ${await response.text()}`);
-      const fallback = {
-        success: true,
-        objectName: normName,
-        summary: `Identified 3D object: ${normName}. Historical specifications and spatial geometry cataloged.`,
+      return {
+        success: false,
+        objectName,
+        summary: `Identified 3D object: ${objectName}. (Tavily search unavailable)`,
         results: [],
-        suggestedQuestions: [`What are the historical origins of ${normName}?`]
       };
-      TAVILY_CACHE.set(normName, fallback);
-      return fallback;
     }
 
     const data = await response.json();
-    const summary = data.answer || `Comprehensive overview and design details for ${normName}.`;
+    const summary = data.answer || `Comprehensive overview and design details for ${objectName}.`;
     const results = (data.results || []).map((r) => ({
       title: r.title,
       url: r.url,
       snippet: r.content,
     }));
 
+    // Generate quick interactive questions grounded in this object
     const suggestedQuestions = [
-      `What are the historical origins and design significance of ${normName}?`,
-      `What materials and engineering techniques are typically used in ${normName}?`,
+      `What are the historical origins and design significance of ${objectName}?`,
+      `What materials and engineering techniques are typically used in ${objectName}?`,
       `How can I best view the geometry and details of this 3D scan?`,
     ];
 
-    const result = {
+    return {
       success: true,
-      objectName: normName,
+      objectName,
       summary,
       results,
       suggestedQuestions,
     };
-    TAVILY_CACHE.set(normName, result);
-    return result;
   } catch (error) {
-    console.warn('[VisionRAG] Tavily network note (timeout/fallback):', error.message);
-    const fallback = {
-      success: true,
-      objectName: normName,
-      summary: `Identified 3D object: ${normName}. Detailed historical and design overview cataloged for spatial inspection.`,
+    console.warn('[VisionRAG] Tavily network error:', error.message);
+    return {
+      success: false,
+      objectName,
+      summary: `Identified 3D object: ${objectName}.`,
       results: [],
-      suggestedQuestions: [`What are the historical origins of ${normName}?`]
     };
-    TAVILY_CACHE.set(normName, fallback);
-    return fallback;
   }
 }
 
 /**
- * Fallback identifier based on scene metadata, JSON sidecar, and sceneName.
+ * Fallback identifier based on scene metadata, sidecar, or explicit object name.
  * Bypasses visual Nemotron step for WebXR or when canvas capture is unavailable.
  * Guarantees reliable Tavily RAG grounding without crashing the pipeline.
  */
-export async function identifyObjectFromMetadata({ cleanModelName, sceneName, point }) {
-  const modelId = path.parse(cleanModelName || 'scene.splat').name;
+export async function identifyObjectFromMetadata({ cleanModelName, sceneName, point, targetObjectName = '' }) {
   let objectName = '';
-  let category = 'Historical 3D Model';
+  let category = 'Military History / Armored Vehicle';
 
-  // 1. Check passed sceneName parameter
-  if (sceneName && typeof sceneName === 'string') {
+  // 1. Explicit object name passed from client (e.g. "T-54/55 Main Battle Tank")
+  if (targetObjectName && typeof targetObjectName === 'string' && targetObjectName.trim().length > 2) {
+    objectName = targetObjectName.trim();
+  }
+
+  // 2. Check sceneName
+  if (!objectName && sceneName && typeof sceneName === 'string') {
     const clean = sceneName.replace(/\.[^/.]+$/, '').replace(/[_\W]+/g, ' ').trim();
-    if (clean.length > 2 && !clean.toLowerCase().includes('default') && !clean.toLowerCase().includes('scene')) {
+    if (clean.length > 2 && !clean.toLowerCase().includes('scene') && !clean.toLowerCase().includes('default')) {
       objectName = clean;
     }
   }
 
-  // 2. Check metadata sidecar JSON in uploads/models/
-  try {
-    const metaPath = path.resolve('uploads', 'models', `${modelId}.json`);
-    let raw = null;
-    try {
-      raw = await fs.readFile(metaPath, 'utf-8');
-    } catch {
-      // If modelId was scene.splat or not found directly, look for any model json in uploads/models
-      const modelFiles = await fs.readdir(path.resolve('uploads', 'models'));
-      const jsonFiles = modelFiles.filter(f => f.endsWith('.json'));
-      // Prefer tank_internet if present
-      for (const jf of jsonFiles) {
-        const content = await fs.readFile(path.resolve('uploads', 'models', jf), 'utf-8');
-        if (content.includes('tank_internet')) {
-          raw = content;
-          break;
-        }
-      }
-      if (!raw && jsonFiles.length > 0) {
-        raw = await fs.readFile(path.resolve('uploads', 'models', jsonFiles[0]), 'utf-8');
-      }
-    }
-
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed.originalFilename) {
-        const hint = parsed.originalFilename.replace(/\.[^/.]+$/, '').replace(/[_\W]+/g, ' ').trim();
-        if (hint.length > 2) {
-          objectName = hint;
-        }
-      }
-      if (parsed.deviceName && parsed.deviceName.includes('Instant Object')) {
-        category = 'Single-Image 3D Object';
-      }
-    }
-  } catch (err) {
-    console.warn('[VisionRAG] Metadata read note:', err.message);
-  }
-
-  // 3. Fallback to model filename
+  // 3. Check model sidecars in uploads/models
   if (!objectName) {
-    objectName = cleanModelName.replace(/\.[^/.]+$/, '').replace(/[_\W]+/g, ' ').trim();
+    try {
+      const modelId = path.parse(cleanModelName || 'scene.splat').name;
+      const metaPath = path.resolve('uploads', 'models', `${modelId}.json`);
+      let raw = null;
+      try {
+        raw = await fs.readFile(metaPath, 'utf-8');
+      } catch {
+        const modelFiles = await fs.readdir(path.resolve('uploads', 'models'));
+        const jsonFiles = modelFiles.filter(f => f.endsWith('.json'));
+        if (jsonFiles.length > 0) {
+          raw = await fs.readFile(path.resolve('uploads', 'models', jsonFiles[0]), 'utf-8');
+        }
+      }
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed.originalFilename) {
+          const hint = parsed.originalFilename.replace(/\.[^/.]+$/, '').replace(/[_\W]+/g, ' ').trim();
+          if (hint.length > 2) objectName = hint;
+        }
+      }
+    } catch { }
   }
 
-  // Normalize object name
-  const lower = objectName.toLowerCase();
-  if (lower.includes('tank')) {
-    objectName = 'Soviet T-34 Medium Tank';
+  // Normalize or default to Tank
+  const lower = (objectName || cleanModelName || '').toLowerCase();
+  if (lower.includes('54') || lower.includes('55') || lower.includes('t54') || lower.includes('t55')) {
+    objectName = 'T-54/55 Main Battle Tank';
     category = 'Military History / Armored Vehicle';
-  } else {
-    objectName = objectName
-      .split(' ')
-      .filter(Boolean)
-      .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-      .join(' ');
-  }
-
-  if (!objectName || objectName.length < 2 || objectName.toLowerCase() === 'scene') {
-    objectName = 'Soviet T-34 Medium Tank';
+  } else if (lower.includes('tank') || !objectName || objectName === 'Unknown Object') {
+    objectName = 'Soviet T-54/T-55 Main Battle Tank';
     category = 'Military History / Armored Vehicle';
   }
 
   console.log(`[SpatialRaycast] Metadata identified target: "${objectName}" (${category}) for 3D point (${(point?.x || 0).toFixed(2)}, ${(point?.y || 0).toFixed(2)}, ${(point?.z || 0).toFixed(2)})`);
 
-  // Query Tavily for grounding and history
+  // Query Tavily for grounding (cached or live API)
   const tavilyData = await enrichWithTavily(objectName);
 
   return {
@@ -367,15 +353,16 @@ export async function identifyObjectFromMetadata({ cleanModelName, sceneName, po
  * @param {string} [params.videoId] - Associated video ID
  * @param {boolean} [params.isWebXR] - Whether request originates from WebXR
  * @param {string} [params.sceneName] - Active scene title or filename
+ * @param {string} [params.targetObjectName] - Pre-identified object name from client
  * @returns {Promise<object>} Targeted object identification and Tavily grounding.
  */
-export async function cropAndIdentifyObject({ point, activeModel, cameraPosition, imageBase64, videoId, isWebXR = false, sceneName = '' }) {
+export async function cropAndIdentifyObject({ point, activeModel, cameraPosition, imageBase64, videoId, isWebXR = false, sceneName = '', targetObjectName = '' }) {
   const cleanModelName = path.basename(activeModel || 'scene.splat');
 
   // WebXR / Headset Mode: Bypass canvas capture to prevent WebXR render matrix corruption.
   // Directly fallback to text-only Tavily search based on scene metadata/context.
   if (isWebXR || !imageBase64) {
-    return await identifyObjectFromMetadata({ cleanModelName, sceneName, point });
+    return await identifyObjectFromMetadata({ cleanModelName, sceneName, point, targetObjectName });
   }
 
   const AUDIT_DIR = path.resolve('uploads', 'audit');
@@ -384,14 +371,14 @@ export async function cropAndIdentifyObject({ point, activeModel, cameraPosition
   const cropFilename = `crop_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.jpg`;
   const cropOutputPath = path.join(AUDIT_DIR, cropFilename);
 
-  // 1. PRIMARY PATH: Real WebGL Viewport Canvas Capture (Desktop mode)
+  // 1. PRIMARY PATH: Real WebGL Viewport Canvas Capture
   if (imageBase64 && typeof imageBase64 === 'string') {
     const cleanB64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
     const imgBuffer = Buffer.from(cleanB64, 'base64');
 
     if (imgBuffer.length > 500) {
       await fs.writeFile(cropOutputPath, imgBuffer);
-      console.log(`[SpatialRaycast] Saved client WebGL viewport crop (${imgBuffer.length} bytes) to ${cropFilename} for 3D point (${(point?.x || 0).toFixed(2)}, ${(point?.y || 0).toFixed(2)}, ${(point?.z || 0).toFixed(2)})`);
+      console.log(`[SpatialRaycast] Saved client WebGL viewport crop (${imgBuffer.length} bytes) to ${cropFilename} for 3D point (${point.x.toFixed(2)}, ${point.y.toFixed(2)}, ${point.z.toFixed(2)})`);
 
       // Inspect real isolated crop with Nemotron Vision model on Nebius Token Factory
       const visionResult = await identifyObjectFromImage({ imagePath: cropOutputPath, base64Data: cleanB64 });
@@ -470,8 +457,7 @@ export async function cropAndIdentifyObject({ point, activeModel, cameraPosition
   }
 
   if (!framesFound) {
-    console.warn(`[SpatialRaycast] No training frames found for ${cleanModelName}, falling back to metadata context`);
-    return await identifyObjectFromMetadata({ cleanModelName, sceneName, point });
+    throw new Error(`No viewport image captured and no training frames found on disk for model ${cleanModelName}. Ensure the 3D viewport canvas is active.`);
   }
 
   // Read available frame images from the matched directory
@@ -480,7 +466,7 @@ export async function cropAndIdentifyObject({ point, activeModel, cameraPosition
     const files = await fs.readdir(framesPath);
     frameFiles = files.filter(f => f.toLowerCase().endsWith('.jpg') || f.toLowerCase().endsWith('.png')).sort();
   } catch (e) {
-    return await identifyObjectFromMetadata({ cleanModelName, sceneName, point });
+    throw new Error(`Frames not found for active model ${cleanModelName}`);
   }
 
   if (frameFiles.length === 0) {

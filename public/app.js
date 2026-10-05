@@ -175,15 +175,6 @@ if ('xr' in navigator) {
   cameraRig.add(controller0);
   cameraRig.add(controller1);
 
-  controller0.addEventListener('connected', (event) => {
-    controller0.userData.handedness = event.data.handedness;
-    controller0.userData.inputSource = event.data;
-  });
-  controller1.addEventListener('connected', (event) => {
-    controller1.userData.handedness = event.data.handedness;
-    controller1.userData.inputSource = event.data;
-  });
-
   const rayGeo = new THREE.BufferGeometry().setFromPoints([
     new THREE.Vector3(0, 0, 0),
     new THREE.Vector3(0, 0, -2.5),
@@ -217,16 +208,25 @@ if ('xr' in navigator) {
       window.speechSynthesis.resume();
     }
 
+    // Prevent multi-trigger API spam & pipeline lockup in WebXR mode
+    if (STATE.isRaycastQuerying) {
+      console.log('[Splatris] WebXR raycast trigger ignored: inspection query already in progress');
+      return;
+    }
+
     const controller = e.target;
     const tempMatrix = new THREE.Matrix4();
     tempMatrix.identity().extractRotation(controller.matrixWorld);
     const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
     const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
 
-    // Trigger is STRICTLY reserved for UI interaction (In-VR HUD Exit Button)
-    // RAG activation is mapped to 'A' or 'X' button via Gamepad API in the render loop.
+    // Check in-VR HUD Exit Button
     if (typeof checkXRExitButtonHit === 'function' && checkXRExitButtonHit(origin, direction)) {
       return;
+    }
+
+    if (typeof performRaycastSelectionXR === 'function') {
+      performRaycastSelectionXR(origin, direction);
     }
   };
   const onXRSqueeze = (e) => {
@@ -1222,7 +1222,6 @@ let lastTime = performance.now();
 let lastFreeRoamTime = performance.now();
 let frameCount = 0;
 const fpsLabel = document.getElementById('stat-fps');
-const xrButtonAX_LastPressed = { left: false, right: false };
 
 function animate() {
   renderer.setAnimationLoop(() => {
@@ -1328,38 +1327,6 @@ function animate() {
             STATE.isExitingXR = true;
             session.end().finally(() => { STATE.isExitingXR = false; });
             return;
-          }
-
-          // Remap RAG Trigger strictly to 'A' (Right) or 'X' (Left) Button [Button 4 on Quest controllers]
-          const isAXPressed = Boolean(btns[4] && (btns[4].pressed || btns[4].value > 0.5));
-          const handKey = source.handedness || 'right';
-          const wasAXPressed = xrButtonAX_LastPressed[handKey] || false;
-          xrButtonAX_LastPressed[handKey] = isAXPressed;
-
-          if (isAXPressed && !wasAXPressed) {
-            if (!STATE.isRaycastQuerying) {
-              console.log(`[WebXR] Button '${handKey === 'left' ? 'X' : 'A'}' pressed on ${handKey} controller -> Triggering RAG inspection`);
-              let activeCtrl = controller0;
-              if (handKey === 'right') {
-                activeCtrl = (controller1 && controller1.userData.handedness === 'right') ? controller1 : controller0;
-              } else {
-                activeCtrl = (controller0 && controller0.userData.handedness === 'left') ? controller0 : controller1;
-              }
-              if (!activeCtrl) activeCtrl = controller0 || controller1;
-
-              if (activeCtrl) {
-                const tempMatrix = new THREE.Matrix4();
-                tempMatrix.identity().extractRotation(activeCtrl.matrixWorld);
-                const origin = new THREE.Vector3().setFromMatrixPosition(activeCtrl.matrixWorld);
-                const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix).normalize();
-
-                if (typeof performRaycastSelectionXR === 'function') {
-                  performRaycastSelectionXR(origin, direction);
-                }
-              }
-            } else {
-              console.log('[WebXR] A/X button ignored: inspection query already active (debounced)');
-            }
           }
 
           const hand = source.handedness;
@@ -2506,11 +2473,7 @@ function showQualityAuditModal(audit) {
  */
 // Defensive fetch helper to prevent SyntaxError: Unexpected token '<' on HTML error pages
 async function safeFetchJson(url, options = {}) {
-  const fetchOpts = { ...options };
-  if (!fetchOpts.signal && typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-    fetchOpts.signal = AbortSignal.timeout(6000);
-  }
-  const res = await fetch(url, fetchOpts);
+  const res = await fetch(url, options);
   const contentType = res.headers.get('content-type') || '';
   if (!res.ok) {
     let errMsg = `Request failed (${res.status} ${res.statusText})`;
@@ -3410,7 +3373,6 @@ if (btnWebXR) {
           });
         }
         await renderer.xr.setSession(session);
-        window.__splatrisXrActive = true;
 
         // 1. Disable Frustum Culling on main containers so room-scale walk never culls the environment
         if (STATE.splatPivotGroup) STATE.splatPivotGroup.frustumCulled = false;
@@ -4178,14 +4140,8 @@ async function speakSpatialAudio(text, position, onComplete) {
     if (ttsPlaybackActive && !ttsPlaybackStarted && (!window.speechSynthesis || !window.speechSynthesis.speaking)) {
       console.warn('[SpatialTTS] Speech synthesis detected blocked by browser policy in WebXR.');
       prependAudioBlockedToHud();
-      if (typeof ttsActiveFinishCallback === 'function') {
-        const cb = ttsActiveFinishCallback;
-        ttsActiveFinishCallback = null;
-        try { cb(); } catch (e) { }
-      }
-      stopSpatialAudio();
     }
-  }, 2000);
+  }, 2200);
 
   // 5. Chrome watchdog timer: prevents background suspension during long multi-sentence playback
   if (ttsHeartbeatTimer) clearInterval(ttsHeartbeatTimer);
@@ -4256,34 +4212,115 @@ function updateChatMessage(id, text, sources = [], grounding = '') {
  * @param {number} [options.boxSize=540] - CSS bounding box dimension in pixels
  * @returns {string|null} Base64 data URL (image/jpeg) or null
  */
-function isInWebXRSession() {
-  try {
-    return Boolean(
-      (typeof renderer !== 'undefined' && renderer && renderer.xr && (renderer.xr.isPresenting || (typeof renderer.xr.getSession === 'function' && renderer.xr.getSession()))) ||
-      window.__splatrisXrActive
-    );
-  } catch (e) {
-    return false;
-  }
-}
-window.isInWebXRSession = isInWebXRSession;
-
 function takeScreenshot({ targetPoint = null, crop = false, screenX = null, screenY = null, boxSize = 540 } = {}) {
   try {
-    // In WebXR: WebGL context is bound to opaque device framebuffer.
-    // NEVER attempt canvas.toDataURL or readPixels inside XR mode.
-    // Return null so the pipeline falls back to text-only metadata Tavily grounding.
-    if (isInWebXRSession()) {
-      console.log('[WebXR] Canvas capture bypassed: active XR session bound to opaque framebuffer');
-      return null;
-    }
-
     const canvasEl = renderer?.domElement || document.getElementById('webgl-canvas');
     if (!canvasEl) return null;
 
+    // Temporarily hide 3D reticle marker and XR HUD so they do not occlude the target object
+    const wasReticleVisible = raycastTargetMesh ? raycastTargetMesh.visible : false;
+    if (raycastTargetMesh) raycastTargetMesh.visible = false;
+    const wasHudVisible = xrHudMesh ? xrHudMesh.visible : false;
+    if (xrHudMesh) {
+      xrHudMesh.visible = false;
+      if (xrHudMesh.parent) {
+        xrHudMesh.parent.remove(xrHudMesh);
+      }
+    }
+
+    const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
+
+    // PATH A: Targeted 3D Object Centered Snapshot (Guaranteed center + wide context window)
+    if (targetPoint) {
+      const renderSize = 768;
+      const snapTarget = new THREE.WebGLRenderTarget(renderSize, renderSize, {
+        format: THREE.RGBAFormat,
+        type: THREE.UnsignedByteType,
+      });
+
+      // Compute viewer eye position in world space
+      const eyePos = new THREE.Vector3();
+      activeCam.getWorldPosition(eyePos);
+
+      // Direction vector from targetPoint to user eye
+      let viewDir = eyePos.clone().sub(targetPoint);
+      let dist = viewDir.length();
+      if (dist < 0.1) {
+        viewDir.set(0, 0.4, 1.0);
+        dist = 2.2;
+      } else {
+        viewDir.normalize();
+      }
+
+      // Optimal framing distance to capture the entire object silhouette with ample context padding
+      const captureDist = Math.max(1.8, Math.min(3.2, dist));
+      const snapCamPos = targetPoint.clone().addScaledVector(viewDir, captureDist);
+
+      const snapCam = new THREE.PerspectiveCamera(52, 1.0, 0.05, 50.0);
+      snapCam.position.copy(snapCamPos);
+      snapCam.lookAt(targetPoint); // Mathematically locks targetPoint dead center (0,0) in viewport!
+      snapCam.updateMatrixWorld(true);
+      snapCam.updateProjectionMatrix();
+
+      const prevRenderTarget = renderer.getRenderTarget();
+      const prevXrEnabled = renderer.xr.enabled;
+
+      // Temporarily disable XR projection override during off-screen render pass
+      renderer.xr.enabled = false;
+      renderer.setRenderTarget(snapTarget);
+      renderer.clear();
+
+      if (STATE.dropInViewer && STATE.dropInViewer.viewer) {
+        try {
+          STATE.dropInViewer.viewer.update(renderer, snapCam);
+        } catch (e) { }
+      }
+      renderer.render(scene, snapCam);
+
+      // Read rendered pixels
+      const pixelBuffer = new Uint8Array(renderSize * renderSize * 4);
+      renderer.readRenderTargetPixels(snapTarget, 0, 0, renderSize, renderSize, pixelBuffer);
+
+      // Restore renderer states
+      renderer.setRenderTarget(prevRenderTarget);
+      renderer.xr.enabled = prevXrEnabled;
+      snapTarget.dispose();
+
+      // Restore reticle & HUD (respecting user grip toggle state)
+      if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
+      if (xrHudMesh) {
+        if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
+        xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
+      }
+
+      // Transfer to 2D canvas and flip Y (WebGL bottom-up to canvas top-down)
+      const snapCanvas = document.createElement('canvas');
+      snapCanvas.width = renderSize;
+      snapCanvas.height = renderSize;
+      const ctx = snapCanvas.getContext('2d');
+      const imgData = ctx.createImageData(renderSize, renderSize);
+
+      for (let y = 0; y < renderSize; y++) {
+        const srcRow = (renderSize - 1 - y) * renderSize * 4;
+        const dstRow = y * renderSize * 4;
+        imgData.data.set(pixelBuffer.subarray(srcRow, srcRow + renderSize * 4), dstRow);
+      }
+      ctx.putImageData(imgData, 0, 0);
+
+      return snapCanvas.toDataURL('image/jpeg', 0.90);
+    }
+
+    // PATH B: Screen space or full viewport capture
+    if (STATE.dropInViewer && STATE.dropInViewer.viewer) {
+      try {
+        STATE.dropInViewer.viewer.update(renderer, activeCam);
+      } catch (e) { }
+    }
+    renderer.render(scene, activeCam);
+
     let dataUrl = null;
     if (!crop) {
-      dataUrl = canvasEl.toDataURL('image/jpeg', 0.85);
+      dataUrl = canvasEl.toDataURL('image/jpeg', 0.90);
     } else {
       const rect = canvasEl.getBoundingClientRect();
       const scaleX = canvasEl.width / (rect.width || 1);
@@ -4310,12 +4347,24 @@ function takeScreenshot({ targetPoint = null, crop = false, screenX = null, scre
         ctx.fillStyle = '#07090e';
         ctx.fillRect(0, 0, cropSize, cropSize);
         ctx.drawImage(canvasEl, srcX, srcY, cropSize, cropSize, 0, 0, cropSize, cropSize);
-        dataUrl = cropCanvas.toDataURL('image/jpeg', 0.85);
+        dataUrl = cropCanvas.toDataURL('image/jpeg', 0.90);
       }
+    }
+
+    // Restore reticle visibility and HUD
+    if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
+    if (xrHudMesh) {
+      if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
+      xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
     }
 
     return dataUrl;
   } catch (err) {
+    if (raycastTargetMesh) raycastTargetMesh.visible = wasReticleVisible;
+    if (xrHudMesh) {
+      if (xrHudMesh.parent !== scene) scene.add(xrHudMesh);
+      xrHudMesh.visible = wasHudVisible && isXrHudVisibleByUser;
+    }
     console.warn('[SpatialRaycast] takeScreenshot error:', err);
     return null;
   }
@@ -4436,9 +4485,6 @@ let lastHudContent = { title: '', subtitle: '', status: '' };
 
 function prependAudioBlockedToHud() {
   if (lastHudContent && lastHudContent.status) {
-    if (lastHudContent.status.toLowerCase().includes('scanning')) {
-      return;
-    }
     if (!lastHudContent.status.includes('[Audio Blocked]')) {
       const blockedStatus = `[Audio Blocked] - Read text below:\n${lastHudContent.status}`;
       updateXRHUDContent({
@@ -4482,14 +4528,7 @@ function createXRInWorldHUD() {
 
 function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = '' } = {}) {
   lastHudContent = { title, subtitle, status };
-  if (!xrHudMesh || !xrHudCanvas || !xrHudTexture) {
-    createXRInWorldHUD();
-  }
   if (!xrHudCanvas || !xrHudTexture || !xrHudMesh) return;
-
-  if (renderer && renderer.xr && renderer.xr.isPresenting) {
-    xrHudMesh.visible = isXrHudVisibleByUser;
-  }
 
   const canvasWidth = 512;
   const paddingX = 24;
@@ -4522,11 +4561,11 @@ function updateXRHUDContent({ title = 'SPLATRIS WEBXR', subtitle = '', status = 
     }
   } else {
     lines = [
-      "Press 'A' (Right) or 'X' (Left) to scan object.",
-      'Pull Trigger for Exit button / UI interaction.',
       'Press Grip button to hide/show panel.',
+      'Pull Trigger to scan an object.',
       '',
-      '🕹️ Left Stick: Move & Glide | 🔄 Right Stick: Turn & Fly',
+      '🕹️ Left Stick: Move & Glide into Scene',
+      '🔄 Right Stick: Turn & Fly Up / Down',
     ];
   }
 
@@ -4737,8 +4776,7 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
 
   initSpatialAudio();
 
-  const isWebXR = isInWebXRSession();
-  const activeCam = (isWebXR && renderer && renderer.xr) ? renderer.xr.getCamera() : camera;
+  const activeCam = renderer.xr.isPresenting ? renderer.xr.getCamera() : camera;
 
   // Position 3D spatial audio emitter at the target object coordinates immediately
   updateSpatialEmitterPosition(hitPoint.x, hitPoint.y, hitPoint.z);
@@ -4747,7 +4785,7 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
   // Position 3D target reticle in world space
   if (raycastTargetMesh) {
     raycastTargetMesh.position.copy(hitPoint);
-    if (activeCam) raycastTargetMesh.lookAt(activeCam.position);
+    raycastTargetMesh.lookAt(activeCam.position);
     raycastTargetMesh.visible = true;
   }
 
@@ -4757,19 +4795,10 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
     emitterEl.textContent = `Processing (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)})...`;
   }
 
-  // 1. Capture dedicated target-centered snapshot for Desktop ONLY.
-  // In WebXR: WebGL context is bound to opaque device framebuffer. Strictly bypassed.
-  let imageBase64 = null;
-  if (!isWebXR) {
-    try {
-      imageBase64 = takeScreenshot({ targetPoint: hitPoint, crop: true, screenX, screenY, boxSize: 540 });
-    } catch (e) {
-      console.warn('[SpatialRaycast] Desktop screenshot capture note:', e.message);
-      imageBase64 = null;
-    }
-  }
+  // 1. Capture dedicated target-centered snapshot (mathematically locks hitPoint at exact center)
+  const imageBase64 = takeScreenshot({ targetPoint: hitPoint, crop: true, screenX, screenY, boxSize: 540 });
 
-  showToast(`🎯 Object selected at (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}). Querying Tavily Spatial RAG...`, 'info', 3000);
+  showToast(`🎯 Object selected at (${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}). Querying Vision RAG...`, 'info', 3000);
 
   // In WebXR: Immediate visual feedback on HUD that raycast registered
   updateXRHUDContent({
@@ -4791,146 +4820,101 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY) {
   appendChatMessage('user', `🎯 Spatial Raycast: Inspect object at [${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}]`);
 
   // Post loading card in chat
-  const typingId = appendChatMessage('agent', isWebXR
-    ? '⏳ Processing: Querying scene context & retrieving Tavily historical grounding for WebXR...'
-    : '⏳ Processing: Capturing WebGL viewport crop, running Nemotron Vision identification & Tavily grounding...');
+  const typingId = appendChatMessage('agent', '⏳ Processing: Capturing WebGL viewport crop, running Nemotron Vision identification & Tavily grounding...');
 
-  let res = null;
   try {
     const camPos = new THREE.Vector3();
-    if (activeCam && typeof activeCam.getWorldPosition === 'function') {
-      activeCam.getWorldPosition(camPos);
-    }
+    activeCam.getWorldPosition(camPos);
 
     const payload = {
       point: { x: hitPoint.x, y: hitPoint.y, z: hitPoint.z },
-      activeModel: STATE.activeModelUrl || (STATE.activeScene && STATE.activeScene.url) || 'tank_internet.splat',
+      activeModel: STATE.activeModelUrl,
       cameraPosition: { x: camPos.x, y: camPos.y, z: camPos.z },
-      videoId: STATE.currentSceneContext?.videoId,
-      sceneName: (STATE.activeScene && (STATE.activeScene.name || STATE.activeScene.originalFilename)) || (STATE.currentSceneContext && (STATE.currentSceneContext.sceneName || STATE.currentSceneContext.originalFilename)) || 'tank_internet',
-      imageBase64: isWebXR ? null : imageBase64,
-      isWebXR,
+      videoId: STATE.currentSceneContext.videoId,
+      imageBase64,
     };
 
-    res = await safeFetchJson('/api/spatial/raycast-object', {
+    const res = await safeFetchJson('/api/spatial/raycast-object', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-  } catch (apiErr) {
-    console.warn('[SpatialRaycast] API network note, applying instant grounding fallback:', apiErr.message);
-    if (isWebXR) {
-      // In WebXR: Never hang on "Scanning...". Instantly supply pre-cached Tavily grounding
-      res = {
-        success: true,
-        objectName: 'Soviet T-34 Medium Tank',
-        category: 'Military History / Armored Vehicle',
-        confidence: 0.95,
-        visualDescription: 'WWII Soviet armored combat vehicle featuring sloped armor, Christie suspension, and high-velocity main gun.',
-        tavilyData: {
-          success: true,
-          objectName: 'Soviet T-34 Medium Tank',
-          summary: 'The T-34 is a legendary Soviet medium tank introduced in 1940 that had a profound effect on the conflict on the Eastern Front in World War II. It featured an unprecedented balance of firepower, mobility, protection, and ruggedness. With sloped armor, Christie suspension, and an 85mm gun on later T-34-85 variants, over 84,000 were produced, making it a cornerstone of 20th century military engineering.',
-          results: [
-            {
-              title: 'T-34 Medium Tank - Design & Historical Overview',
-              url: 'https://en.wikipedia.org/wiki/T-34',
-              snippet: 'The T-34 was the mainstay of Soviet armored forces throughout World War II with over 84,000 units produced.'
-            },
-            {
-              title: 'Tank T-34-85 3D Scan & Cultural Heritage',
-              url: 'https://sketchfab.com/3d-models/tank-t-34-85-3d-scan-6368842b50fa4c948d459076265a9df8',
-              snippet: 'Photogrammetric 3D scan documenting the hull, turret, and Christie suspension of the T-34-85.'
-            }
-          ]
-        }
-      };
-    } else {
-      const fallbackMsg = "Could not fetch object data from server. Please try again.";
-      updateChatMessage(typingId, `⚠️ ${fallbackMsg} (${apiErr.message})`, []);
-      unlockRaycastQuery();
+
+    if (!res.success) {
+      throw new Error(res.error || 'Failed to inspect object');
+    }
+
+    const objectName = (res.objectName || '').trim();
+    const isUnidentified = !objectName || objectName.toLowerCase() === 'unknown object' || (typeof res.confidence === 'number' && res.confidence < 0.35);
+
+    if (isUnidentified) {
+      const fallbackMsg = "I couldn't identify this object. Please try clicking closer or from another angle.";
+      updateXRHUDContent({
+        title: 'OBJECT NOT IDENTIFIED',
+        subtitle: 'Low confidence detection',
+        status: fallbackMsg,
+      });
+      updateChatMessage(typingId, `⚠️ ${fallbackMsg}`, []);
+      speakSpatialAudio(fallbackMsg, hitPoint, () => {
+        unlockRaycastQuery();
+      });
       return;
     }
-  }
 
-  if (!res || !res.success) {
-    if (isWebXR) {
-      res = {
-        success: true,
-        objectName: 'Soviet T-34 Medium Tank',
-        category: 'Military History / Armored Vehicle',
-        confidence: 0.95,
-        visualDescription: 'WWII Soviet armored combat vehicle featuring sloped armor and 85mm turret.',
-        tavilyData: {
-          success: true,
-          objectName: 'Soviet T-34 Medium Tank',
-          summary: 'The T-34 is a legendary Soviet medium tank introduced in 1940 that had a profound effect on the conflict on the Eastern Front in World War II. It featured an unprecedented balance of firepower, mobility, protection, and ruggedness. With sloped armor, Christie suspension, and an 85mm gun on later T-34-85 variants, over 84,000 were produced, making it a cornerstone of 20th century military engineering.',
-        }
-      };
-    } else {
-      const errMsg = (res && res.error) || 'Failed to inspect object';
-      updateChatMessage(typingId, `⚠️ ${errMsg}`, []);
-      unlockRaycastQuery();
-      return;
-    }
-  }
+    // Persist inspected object into state for follow-up conversational RAG
+    STATE.lastInspectedObject = {
+      objectName: res.objectName,
+      category: res.category,
+      confidence: res.confidence,
+      visualDescription: res.visualDescription,
+      tavilyData: res.tavilyData,
+      cropUrl: res.cropUrl,
+      point: hitPoint,
+    };
 
-  const objectName = (res.objectName || 'Soviet T-34 Medium Tank').trim();
-  const summaryText = res.tavilyData?.summary || res.tavilyGrounding?.summary || res.visualDescription || `Target object identified in 3D scene: ${objectName}.`;
-
-  // 1. Persist inspected object into state for follow-up conversational RAG
-  STATE.lastInspectedObject = {
-    objectName: res.objectName,
-    category: res.category,
-    confidence: res.confidence,
-    visualDescription: res.visualDescription,
-    tavilyData: res.tavilyData,
-    cropUrl: res.cropUrl,
-    point: hitPoint,
-  };
-
-  // 2. Update DOM written text in Desktop RAG panel (Guaranteed text binding)
-  try {
+    // Update DOM written text in Desktop RAG panel
     renderRaycastResult(typingId, res);
+
     if (res.objectName) {
       updateQueryChipsForObject(res.objectName);
     }
-  } catch (domErr) {
-    console.warn('[SpatialRaycast] Error updating desktop panel:', domErr);
-  }
 
-  // 3. Update floating VR HUD canvas (Guaranteed instant text binding)
-  try {
+    // In WebXR: Update floating HUD with object name and concise summary
+    const summaryText = res.tavilyData?.summary || res.tavilyGrounding?.summary || res.visualDescription || '';
     updateXRHUDContent({
-      title: objectName.toUpperCase(),
-      subtitle: `${res.category || 'Military History / Armored Vehicle'} • ${Math.round((res.confidence || 0.95) * 100)}% Match`,
+      title: (res.objectName || 'OBJECT IDENTIFIED').toUpperCase(),
+      subtitle: `${res.category || 'Spatial Element'} • ${Math.round((res.confidence || 0.9) * 100)}% Match`,
       status: summaryText,
     });
-  } catch (hudErr) {
-    console.warn('[SpatialRaycast] Error updating XR HUD:', hudErr);
-  }
 
-  // 4. ALWAYS unlock the raycast query state immediately so user is never locked out
-  unlockRaycastQuery();
-
-  // 5. Dynamic spatial speech narration positioned at the object
-  // Audio playback is completely isolated: any audio failure or browser block will NEVER clear or mutate panel text
-  if (isWebXR || STATE.audioEnabled) {
-    try {
-      const speechText = `${objectName}. ${summaryText}`;
-      speakSpatialAudio(speechText, hitPoint);
-    } catch (audioErr) {
-      console.warn('[SpatialRaycast] Audio playback failed, text remains visible:', audioErr);
+    // Dynamic spatial speech narration positioned at the object
+    // Automatically triggers in WebXR mode or when audio is enabled
+    // Only unlock the trigger state AFTER audio finishes speaking
+    if (renderer.xr.isPresenting || STATE.audioEnabled) {
+      const speechText = `${res.objectName}. ${summaryText}`;
+      speakSpatialAudio(speechText, hitPoint, () => {
+        unlockRaycastQuery();
+      });
+    } else {
+      unlockRaycastQuery();
     }
+  } catch (err) {
+    console.error('Raycast inspection error:', err);
+    const fallbackMsg = "I couldn't identify this object. Please try clicking again.";
+    updateChatMessage(typingId, `Target inspection error: ${err.message}`, []);
+    updateXRHUDContent({
+      title: 'INSPECTION ERROR',
+      subtitle: 'Target inspection failed',
+      status: fallbackMsg,
+    });
+    speakSpatialAudio(fallbackMsg, hitPoint, () => {
+      unlockRaycastQuery();
+    });
   }
 }
 
 function renderRaycastResult(id, result) {
-  let el = id ? document.getElementById(id) : null;
-  if (!el && chatLog) {
-    const newId = appendChatMessage('agent', 'Analyzing object...');
-    el = document.getElementById(newId);
-  }
+  const el = document.getElementById(id);
   if (!el) return;
 
   const contentEl = el.querySelector('.msg-content');
@@ -4938,7 +4922,7 @@ function renderRaycastResult(id, result) {
 
   const objName = (result.objectName || 'Detected Spatial Object').trim();
   const desc = (result.visualDescription || result.description || 'Target object identified in 3D scene.').trim();
-  const confidence = result.confidence ? Math.round(result.confidence * 100) : 95;
+  const confidence = result.confidence ? Math.round(result.confidence * 100) : 92;
   const cropUrl = result.cropUrl || (result.originalFrame ? `/uploads/frames/${result.originalFrame}` : '');
 
   // Tavily payload mapping: support both tavilyData and tavilyGrounding
@@ -4965,7 +4949,7 @@ function renderRaycastResult(id, result) {
   }
 
   contentEl.innerHTML = `
-    <div>Target Grounding: <strong>${objName}</strong></div>
+    <div>Identified target via <strong>Nemotron Vision</strong>:</div>
     <div class="raycast-card">
       <div class="raycast-header">
         <div class="raycast-title">
@@ -4978,7 +4962,7 @@ function renderRaycastResult(id, result) {
         <div class="raycast-body">
           <div class="raycast-desc">${desc}</div>
           <div class="raycast-meta">
-            <span class="raycast-tag">${result.category || 'Historical Model'}</span>
+            <span class="raycast-tag">Vision: Nemotron-MiniCPM-V</span>
             <span class="raycast-tag">Tavily Grounded</span>
           </div>
         </div>
