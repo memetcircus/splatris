@@ -4867,11 +4867,11 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
   ctx.textBaseline = 'middle';
   ctx.fillStyle = '#ffffff';
   ctx.fillText(STATE.audioEnabled ? '🔊' : '🔇', muteBtnX + (muteBtnW / 2), muteBtnY + (muteBtnH / 2));
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-
   // Subtitle / Chosen Question Header - Full Multi-Line Wrapping (Never sliced or cut off)
-  let subtitleEndY = 95;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+
+  let subtitleEndY = 100;
   if (displaySubtitle) {
     ctx.fillStyle = '#06b6d4';
     ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
@@ -4894,7 +4894,7 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
     }
     if (currentSubLine) subLines.push(currentSubLine);
 
-    let subY = 125;
+    let subY = 108;
     for (const sLine of subLines) {
       ctx.fillText(sLine, paddingX, subY);
       subY += 28;
@@ -4905,8 +4905,8 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
   // Fixed, comfortable font size for VR - never shrinks down to illegible micro-text
   const fontSize = 23;
   const lineHeight = 33;
-  const maxY = (displayQuestions && displayQuestions.length > 0) ? 685 : (H - 50);
-  const startY = displaySubtitle ? (subtitleEndY + 12) : 135;
+  const maxY = (displayQuestions && displayQuestions.length > 0) ? 680 : (H - 50);
+  const startY = displaySubtitle ? (subtitleEndY + 18) : 124;
   const availableHeight = maxY - startY;
 
   function computeWrappedLines(size) {
@@ -4951,18 +4951,20 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
   xrHudMaxScroll = Math.max(0, totalTextHeight - availableHeight);
   xrHudScrollOffset = Math.max(0, Math.min(xrHudScrollOffset, xrHudMaxScroll));
 
-  // Clip the text rendering viewport so text stays strictly within [startY, maxY]
+  // Clip the text rendering viewport with breathing room so text never clips horizontally or vertically
   ctx.save();
   ctx.beginPath();
-  ctx.rect(paddingX, startY - 2, maxTextWidth - 14, availableHeight + 6);
+  ctx.rect(paddingX - 4, startY - 4, maxTextWidth + 8, availableHeight + 8);
   ctx.clip();
 
-  // Draw lines with vertical spacing and scroll offset
+  // Draw lines with vertical spacing and scroll offset using top baseline
   ctx.fillStyle = '#e2e8f0';
   ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+  ctx.textBaseline = 'top';
+
   let curY = startY - xrHudScrollOffset;
   for (const line of lines) {
-    if (curY >= startY - 35 && curY <= maxY + 35) {
+    if (curY + lineHeight >= startY && curY <= maxY) {
       if (line) {
         ctx.fillText(line, paddingX, curY);
       }
@@ -5007,15 +5009,16 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
     const numQ = Math.min(displayQuestions.length, 3);
     ctx.fillStyle = isHudQuestionQuerying ? '#94a3b8' : '#38bdf8';
     ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.textBaseline = 'top';
     ctx.fillText(
       isHudQuestionQuerying ? '⏳ ANALYZING QUESTION (Please wait...):' : '💡 RELATED QUESTIONS (Point & Pull Left Trigger):',
       paddingX,
-      696
+      694
     );
 
     for (let i = 0; i < numQ; i++) {
-      const qY = 712 + (i * 92);
-      const qH = 78;
+      const qY = 720 + (i * 90);
+      const qH = 76;
       const qText = displayQuestions[i];
 
       // Glassmorphic Question Card (Frozen/Dimmed if analyzing)
@@ -5039,6 +5042,7 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
       // Card Text - Full Multi-Line Wrap
       ctx.fillStyle = isHudQuestionQuerying ? '#94a3b8' : '#f8fafc';
       ctx.font = 'bold 19px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.textBaseline = 'top';
 
       const qWords = qText.split(' ');
       let line1 = isHudQuestionQuerying ? '⏳ ' : '💬 ';
@@ -5051,10 +5055,10 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
         }
       }
       if (line2) {
-        ctx.fillText(line1, paddingX + 20, qY + 32);
-        ctx.fillText(line2, paddingX + 46, qY + 58);
+        ctx.fillText(line1, paddingX + 20, qY + 14);
+        ctx.fillText(line2, paddingX + 46, qY + 40);
       } else {
-        ctx.fillText(line1, paddingX + 20, qY + 46);
+        ctx.fillText(line1, paddingX + 20, qY + 26);
       }
     }
   }
