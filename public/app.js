@@ -32,6 +32,19 @@ let isXrHudVisibleByUser = true;
 let globalTtsGainNode = null;
 let xrHudReticleMesh = null;
 let ttsGenerationId = 0;
+let isLeftControllerTargetingHud = false;
+let isHudQuestionQuerying = false;
+let xrHudScrollOffset = 0;
+let xrHudMaxScroll = 0;
+
+function scrollXrHud(deltaY) {
+  if (xrHudMaxScroll <= 0) return;
+  const oldOffset = xrHudScrollOffset;
+  xrHudScrollOffset = Math.max(0, Math.min(xrHudScrollOffset + deltaY, xrHudMaxScroll));
+  if (Math.abs(xrHudScrollOffset - oldOffset) > 0.5) {
+    updateXRHUDContent();
+  }
+}
 
 function fadeOutAndStopAudio(durationMs = 400) {
   ttsPlaybackActive = false;
@@ -1375,6 +1388,7 @@ function animate() {
           const hits = threeRaycaster.intersectObject(xrHudMesh);
 
           if (hits.length > 0) {
+            isLeftControllerTargetingHud = true;
             if (!xrHudReticleMesh) {
               const reticleGeo = new THREE.RingGeometry(0.008, 0.018, 32);
               const reticleMat = new THREE.MeshBasicMaterial({
@@ -1395,14 +1409,17 @@ function animate() {
             const normalOffset = new THREE.Vector3(0, 0, 0.003).applyQuaternion(xrHudMesh.quaternion);
             xrHudReticleMesh.position.add(normalOffset);
             xrHudReticleMesh.visible = true;
-          } else if (xrHudReticleMesh) {
-            xrHudReticleMesh.visible = false;
+          } else {
+            isLeftControllerTargetingHud = false;
+            if (xrHudReticleMesh) xrHudReticleMesh.visible = false;
           }
-        } else if (xrHudReticleMesh) {
-          xrHudReticleMesh.visible = false;
+        } else {
+          isLeftControllerTargetingHud = false;
+          if (xrHudReticleMesh) xrHudReticleMesh.visible = false;
         }
-      } else if (xrHudReticleMesh) {
-        xrHudReticleMesh.visible = false;
+      } else {
+        isLeftControllerTargetingHud = false;
+        if (xrHudReticleMesh) xrHudReticleMesh.visible = false;
       }
 
       // 2. Increase Camera Far Plane to 1000.0 so environment never clips out during room-scale walk
@@ -1465,18 +1482,23 @@ function animate() {
             return;
           }
 
-          // Left Controller: Smooth Locomotion (move forward/backward & strafe)
+          // Left Controller: Smooth Locomotion OR In-VR HUD Scrolling (when pointing at HUD)
           if (hand === 'left') {
             const stickX = axes.length >= 4 ? axes[2] : (axes[0] || 0);
             const stickY = axes.length >= 4 ? axes[3] : (axes[1] || 0);
 
-            const moveSpeed = 2.4 * dt;
-            if (Math.abs(stickY) > deadzone) {
-              // stickY < 0 is forward
-              cameraRig.position.addScaledVector(xrForward, -stickY * moveSpeed);
-            }
-            if (Math.abs(stickX) > deadzone) {
-              cameraRig.position.addScaledVector(xrRight, stickX * moveSpeed);
+            if (isLeftControllerTargetingHud && xrHudMesh && xrHudMesh.visible && Math.abs(stickY) > deadzone) {
+              // Smoothly scroll the HUD text up/down (stickY > 0 scrolls down, stickY < 0 scrolls up)
+              scrollXrHud(stickY * dt * 450);
+            } else {
+              const moveSpeed = 2.4 * dt;
+              if (Math.abs(stickY) > deadzone) {
+                // stickY < 0 is forward
+                cameraRig.position.addScaledVector(xrForward, -stickY * moveSpeed);
+              }
+              if (Math.abs(stickX) > deadzone) {
+                cameraRig.position.addScaledVector(xrRight, stickX * moveSpeed);
+              }
             }
           }
           // Right Controller: Turning & Elevation
@@ -4880,9 +4902,9 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
     subtitleEndY = subY;
   }
 
-  // Measure and wrap lines with adaptive sizing so no response text is stripped
-  let fontSize = 23;
-  let lineHeight = 31;
+  // Fixed, comfortable font size for VR - never shrinks down to illegible micro-text
+  const fontSize = 23;
+  const lineHeight = 33;
   const maxY = (displayQuestions && displayQuestions.length > 0) ? 685 : (H - 50);
   const startY = displaySubtitle ? (subtitleEndY + 12) : 135;
   const availableHeight = maxY - startY;
@@ -4901,7 +4923,7 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
         let currentLine = '';
         for (const w of rawWords) {
           const testLine = currentLine ? `${currentLine} ${w}` : w;
-          if (ctx.measureText(testLine).width <= maxTextWidth) {
+          if (ctx.measureText(testLine).width <= maxTextWidth - 28) {
             currentLine = testLine;
           } else {
             if (currentLine) wrapped.push(currentLine);
@@ -4915,6 +4937,7 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
         '👉 Pull RIGHT Trigger to scan target objects.',
         '👈 Pull LEFT Trigger on panel buttons to choose.',
         '✊ Squeeze Left/Right GRIP to open/close panel.',
+        '🕹️ Left Thumbstick Up/Down: Scroll text response.',
         '🚪 Press [ A or X ] to Exit WebXR.',
         '',
         '🕹️ Left Stick: Move & Glide | Right Stick: Turn',
@@ -4923,45 +4946,86 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
     return wrapped;
   }
 
-  let lines = computeWrappedLines(fontSize);
-  // Adaptively adjust line height and font if response text is long, so the entire answer fits
-  if (lines.length * lineHeight > availableHeight && fontSize > 19) {
-    fontSize = 19;
-    lineHeight = 26;
-    lines = computeWrappedLines(fontSize);
-  }
-  if (lines.length * lineHeight > availableHeight && fontSize > 16) {
-    fontSize = 17;
-    lineHeight = 22;
-    lines = computeWrappedLines(fontSize);
-  }
+  const lines = computeWrappedLines(fontSize);
+  const totalTextHeight = lines.length * lineHeight;
+  xrHudMaxScroll = Math.max(0, totalTextHeight - availableHeight);
+  xrHudScrollOffset = Math.max(0, Math.min(xrHudScrollOffset, xrHudMaxScroll));
 
-  // Draw lines with vertical spacing
+  // Clip the text rendering viewport so text stays strictly within [startY, maxY]
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(paddingX, startY - 2, maxTextWidth - 14, availableHeight + 6);
+  ctx.clip();
+
+  // Draw lines with vertical spacing and scroll offset
   ctx.fillStyle = '#e2e8f0';
   ctx.font = `${fontSize}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
-  let curY = startY;
+  let curY = startY - xrHudScrollOffset;
   for (const line of lines) {
-    if (curY > maxY) break;
-    if (line) {
-      ctx.fillText(line, paddingX, curY);
+    if (curY >= startY - 35 && curY <= maxY + 35) {
+      if (line) {
+        ctx.fillText(line, paddingX, curY);
+      }
     }
     curY += lineHeight;
+  }
+  ctx.restore();
+
+  // Draw sleek vertical scrollbar if text exceeds available height
+  if (xrHudMaxScroll > 0) {
+    const scrollTrackX = W - 32;
+    const scrollTrackY = startY;
+    const scrollTrackH = availableHeight;
+
+    // Track background
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.08)';
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') {
+      ctx.roundRect(scrollTrackX, scrollTrackY, 6, scrollTrackH, 3);
+    } else {
+      ctx.rect(scrollTrackX, scrollTrackY, 6, scrollTrackH);
+    }
+    ctx.fill();
+
+    // Thumb indicator
+    const thumbH = Math.max(32, (scrollTrackH / totalTextHeight) * scrollTrackH);
+    const thumbRatio = xrHudScrollOffset / xrHudMaxScroll;
+    const thumbY = scrollTrackY + thumbRatio * (scrollTrackH - thumbH);
+
+    ctx.fillStyle = '#06b6d4';
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') {
+      ctx.roundRect(scrollTrackX - 1, thumbY, 8, thumbH, 4);
+    } else {
+      ctx.rect(scrollTrackX - 1, thumbY, 8, thumbH);
+    }
+    ctx.fill();
   }
 
   // Draw 2 or 3 interactive question buttons at the bottom if questions exist
   if (displayQuestions && displayQuestions.length > 0) {
     const numQ = Math.min(displayQuestions.length, 3);
-    ctx.fillStyle = '#38bdf8';
+    ctx.fillStyle = isHudQuestionQuerying ? '#94a3b8' : '#38bdf8';
     ctx.font = 'bold 20px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('💡 RELATED QUESTIONS (Point & Pull Left Trigger):', paddingX, 696);
+    ctx.fillText(
+      isHudQuestionQuerying ? '⏳ ANALYZING QUESTION (Please wait...):' : '💡 RELATED QUESTIONS (Point & Pull Left Trigger):',
+      paddingX,
+      696
+    );
 
     for (let i = 0; i < numQ; i++) {
       const qY = 712 + (i * 92);
       const qH = 78;
       const qText = displayQuestions[i];
 
-      // Glassmorphic Question Card
-      ctx.fillStyle = 'rgba(6, 182, 212, 0.16)';
+      // Glassmorphic Question Card (Frozen/Dimmed if analyzing)
+      if (isHudQuestionQuerying) {
+        ctx.fillStyle = 'rgba(51, 65, 85, 0.45)';
+        ctx.strokeStyle = '#475569';
+      } else {
+        ctx.fillStyle = 'rgba(6, 182, 212, 0.16)';
+        ctx.strokeStyle = '#06b6d4';
+      }
       ctx.beginPath();
       if (typeof ctx.roundRect === 'function') {
         ctx.roundRect(paddingX, qY, maxTextWidth, qH, 14);
@@ -4970,19 +5034,18 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
       }
       ctx.fill();
       ctx.lineWidth = 2;
-      ctx.strokeStyle = '#06b6d4';
       ctx.stroke();
 
-      // Card Text - Full Multi-Line Wrap (NEVER stripped or truncated)
-      ctx.fillStyle = '#f8fafc';
+      // Card Text - Full Multi-Line Wrap
+      ctx.fillStyle = isHudQuestionQuerying ? '#94a3b8' : '#f8fafc';
       ctx.font = 'bold 19px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
 
       const qWords = qText.split(' ');
-      let line1 = '💬 ';
+      let line1 = isHudQuestionQuerying ? '⏳ ' : '💬 ';
       let line2 = '';
       for (const w of qWords) {
         if (!line2 && ctx.measureText(line1 + ' ' + w).width < maxTextWidth - 40) {
-          line1 += (line1 === '💬 ' ? '' : ' ') + w;
+          line1 += (line1 === '💬 ' || line1 === '⏳ ' ? '' : ' ') + w;
         } else {
           line2 += (line2 ? ' ' : '') + w;
         }
@@ -5001,9 +5064,16 @@ function updateXRHUDContent({ title, subtitle, status, questions } = {}) {
 }
 
 function selectXRQuestion(index) {
+  if (isHudQuestionQuerying) {
+    console.log('[WebXR] Question selection ignored: analysis currently running');
+    return;
+  }
   if (!lastHudContent.questions || !lastHudContent.questions[index]) return;
   const q = lastHudContent.questions[index];
   console.log(`[WebXR] Question ${index + 1} selected via Left Trigger: "${q}"`);
+
+  isHudQuestionQuerying = true;
+  xrHudScrollOffset = 0; // Reset scroll to top on new query
 
   // Stop any currently playing audio immediately so voices never overlap!
   stopSpatialAudio();
@@ -5016,9 +5086,25 @@ function selectXRQuestion(index) {
     questions: lastHudContent.questions,
   });
 
-  submitRagQuery(q).catch((err) => {
-    console.error('[WebXR] Question query error:', err);
-  });
+  // Watchdog timer: automatically unlock after 20 seconds in case of network issues
+  if (window.__hudQuestionLockTimer) clearTimeout(window.__hudQuestionLockTimer);
+  window.__hudQuestionLockTimer = setTimeout(() => {
+    if (isHudQuestionQuerying) {
+      console.warn('[WebXR] Watchdog: auto-unlocking HUD questions after timeout');
+      isHudQuestionQuerying = false;
+      updateXRHUDContent();
+    }
+  }, 20000);
+
+  submitRagQuery(q)
+    .catch((err) => {
+      console.error('[WebXR] Question query error:', err);
+    })
+    .finally(() => {
+      isHudQuestionQuerying = false;
+      if (window.__hudQuestionLockTimer) clearTimeout(window.__hudQuestionLockTimer);
+      updateXRHUDContent();
+    });
 }
 
 function checkXRHudInteraction(origin, direction, isLeftHand = true) {
@@ -5037,9 +5123,24 @@ function checkXRHudInteraction(origin, direction, isLeftHand = true) {
       return true;
     }
 
-    // 2. Questions on HUD (Point with Left Controller & Pull Left Trigger)
+    // 2. Scrollbar tap interaction on HUD (uv.x >= 0.90 and uv.y between 0.32 and 0.85)
+    if (isLeftHand && xrHudMaxScroll > 0 && uv.x >= 0.90 && uv.y >= 0.32 && uv.y <= 0.85) {
+      const scrollStep = 110;
+      if (uv.y > 0.58) {
+        scrollXrHud(-scrollStep); // Upper half -> scroll up
+      } else {
+        scrollXrHud(scrollStep); // Lower half -> scroll down
+      }
+      return true;
+    }
+
+    // 3. Questions on HUD (Point with Left Controller & Pull Left Trigger)
     if (isLeftHand && lastHudContent.questions && lastHudContent.questions.length > 0) {
       if (uv.x >= 0.04 && uv.x <= 0.96) {
+        if (isHudQuestionQuerying) {
+          console.log('[WebXR] Question trigger ignored: analysis currently running');
+          return true; // Absorb click so it doesn't pass through
+        }
         if (uv.y >= 0.22 && uv.y <= 0.31 && lastHudContent.questions[0]) {
           selectXRQuestion(0);
           return true;

@@ -1226,6 +1226,24 @@ cloudflared tunnel --url http://localhost:3000
   - **Standard 3DGS Pipeline Integrity Guaranteed**:
     - The Standard 3DGS (Gaussian Splatting) pipeline, render loop, DropInViewer, and depth sorting remain 100% untouched and functional.
 
+- [x] **6. Milestone 49: In-VR HUD Question Freezing, Thumbstick Scrolling & Cloud Demo Guards ([public/app.js](file:///Users/akif/Projects/splatris/public/app.js), [services/jobService.js](file:///Users/akif/Projects/splatris/services/jobService.js))**:
+  - **In-VR Question Freezing & Duplicate Query Prevention**:
+    - Introduced `isHudQuestionQuerying` state lock with a 20-second watchdog timer.
+    - When a question card is selected via Left Trigger, all question cards instantly transition to a frozen/disabled visual state (dimmed slate styling `rgba(51, 65, 85, 0.45)`, muted `#475569` border, and `⏳` prefix).
+    - Additional trigger pulls on question cards during analysis are safely absorbed, preventing duplicate API calls and audio queue collision.
+    - Automatic release and card restoration upon response completion or watchdog timeout.
+  - **In-VR HUD Crisp Text Scrolling with Thumbstick & Scrollbar**:
+    - Locked response font size at a comfortable, easily readable 23px with 33px line height, completely eliminating adaptive shrinking into unreadable micro-text.
+    - Added canvas viewport clipping (`ctx.save()` / `ctx.clip()`) strictly confining text rendering between `startY` and `maxY`.
+    - Integrated thumbstick scrolling: when the Left Controller laser reticle targets the HUD panel, moving the thumbstick up/down smoothly scrolls `xrHudScrollOffset` with clamped boundaries.
+    - Rendered a sleek vertical scrollbar on the right margin with an active cyan indicator thumb showing scroll progress.
+    - Added tap-to-scroll support on the scrollbar track for additional accessibility.
+  - **Cloud Demo Upload Guard (Render vs. Localhost / Cloudflare)**:
+    - Added `isRenderDemoDeployment()` detection guard: on `splatris.onrender.com`, clicking the dropzone or dropping files presents an informative toast (`"Demo mode active with pre-trained 3D models. To train custom scenes, clone the repo or spin up a GPU worker."`).
+    - Kept uploads 100% unrestricted on `localhost:3000` and `*.trycloudflare.com` for local testing and Image2Splat generation.
+  - **Standard 3DGS Default Model Priority**:
+    - Sorted `Standard 3DGS` (`Sep 29 - tank_internet.mp4 • 18.5 MB`) as #1 default active model in recent spaces and training pipeline selector.
+
 
 
 
