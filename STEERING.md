@@ -1243,6 +1243,12 @@ cloudflared tunnel --url http://localhost:3000
     - Kept uploads 100% unrestricted on `localhost:3000` and `*.trycloudflare.com` for local testing and Image2Splat generation.
   - **Standard 3DGS Default Model Priority**:
     - Sorted `Standard 3DGS` (`Sep 29 - tank_internet.mp4 • 18.5 MB`) as #1 default active model in recent spaces and training pipeline selector.
+  - **In-VR HUD Top Text Baseline & Viewport Clipping Fix**:
+    - Resolved horizontal text slicing by switching canvas `ctx.textBaseline` from `'alphabetic'` to `'top'`.
+    - Added an 18px padding offset below the target subtitle, guaranteeing every character, ascender, and capital letter renders 100% visible inside the scrollable viewport.
+  - **Zero Voice Overlap & Immediate Audio Interruption on Right Trigger**:
+    - Intercepted Right Trigger pulls to immediately call `stopSpatialAudio()`, cutting the active Web Audio buffer node in 0ms and flushing `ttsSentenceQueue`.
+    - Implemented `activeInspectionId` generation tracking to invalidate stale in-flight Tavily/Nemotron responses, ensuring smooth and instant UX transitions to new targets without voice collisions.
 
 
 
