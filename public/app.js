@@ -1781,9 +1781,28 @@ const btnCancelUpload = document.getElementById('btn-cancel-upload');
 
 let currentUploadXhr = null;
 
+function isRenderDemoDeployment() {
+  const host = (window.location.hostname || '').toLowerCase();
+  // Allow full upload functionality on localhost, 127.0.0.1, or any cloudflare tunnel
+  if (host === 'localhost' || host === '127.0.0.1' || host.endsWith('trycloudflare.com') || host.endsWith('.local')) {
+    return false;
+  }
+  return host.includes('onrender.com');
+}
+
+const RENDER_DEMO_MSG = 'Demo mode active with pre-trained 3D models. To train custom scenes, clone the repo or spin up a GPU worker.';
+
 // Dropzone interactions
 if (dropzone && fileInput) {
-  dropzone.addEventListener('click', () => fileInput.click());
+  dropzone.addEventListener('click', (e) => {
+    if (isRenderDemoDeployment()) {
+      e.preventDefault();
+      e.stopPropagation();
+      showToast(RENDER_DEMO_MSG, 'info', 6000);
+      return;
+    }
+    fileInput.click();
+  });
 
   dropzone.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -1797,6 +1816,10 @@ if (dropzone && fileInput) {
   dropzone.addEventListener('drop', (e) => {
     e.preventDefault();
     dropzone.classList.remove('drag-over');
+    if (isRenderDemoDeployment()) {
+      showToast(RENDER_DEMO_MSG, 'info', 6000);
+      return;
+    }
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {
       executeEndToEndPipeline(files[0]);
@@ -1804,6 +1827,11 @@ if (dropzone && fileInput) {
   });
 
   fileInput.addEventListener('change', (e) => {
+    if (isRenderDemoDeployment()) {
+      e.target.value = '';
+      showToast(RENDER_DEMO_MSG, 'info', 6000);
+      return;
+    }
     const files = e.target.files;
     if (files && files.length > 0) {
       executeEndToEndPipeline(files[0]);
@@ -2976,6 +3004,10 @@ function streamTavilyDataToRagPanel(objectName, tavilyData) {
 }
 
 async function executeEndToEndPipeline(file) {
+  if (isRenderDemoDeployment()) {
+    showToast(RENDER_DEMO_MSG, 'info', 6000);
+    return;
+  }
   initSpatialAudio();
   if (btnAbortJob) btnAbortJob.classList.add('hidden');
 
@@ -6107,6 +6139,12 @@ function updateDeviceBrandingTag() {
 
 // --- Initial Scene Load & Boot ---
 updateDeviceBrandingTag();
+if (typeof isRenderDemoDeployment === 'function' && isRenderDemoDeployment()) {
+  const dSub = document.getElementById('dropzone-subtitle');
+  if (dSub) {
+    dSub.textContent = 'Demo Mode: Pre-trained 3D models active. Explore in 3D & WebXR!';
+  }
+}
 loadRecentScenes().then(async () => {
   checkAndReconnectActiveJob();
   const targetUrl = STATE.activeScene?.url || STATE.activeModelUrl;
