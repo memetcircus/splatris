@@ -193,8 +193,9 @@ router.post('/start', (req, res) => {
       trainingMethod,
     } = req.body || {};
 
-    const rawMethod = String(training_method || trainingMethod || '3dgs').toLowerCase().trim();
-    const effectiveTrainingMethod = ['triangle', 'image2splat'].includes(rawMethod) ? rawMethod : '3dgs';
+    const isImageFile = /\.(jpe?g|png|webp)$/i.test(originalFilename || '') || (deviceName && deviceName.includes('Single Image'));
+    const rawMethod = String(training_method || trainingMethod || (isImageFile ? 'image2splat' : '3dgs')).toLowerCase().trim();
+    const effectiveTrainingMethod = isImageFile ? 'image2splat' : (['triangle', 'image2splat'].includes(rawMethod) ? rawMethod : '3dgs');
 
     const job = createJob({
       videoId: videoId || 'demo-scene',

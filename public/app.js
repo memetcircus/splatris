@@ -1060,13 +1060,25 @@ async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
     }
   }
 
-  // Nerfstudio (3DGS): uses Z-up coordinates -> needs -90 deg X rotation (quaternion [-0.7071068, 0, 0, 0.7071068])
-  // Triangle Splatting (raw COLMAP): ground plane is in X-Z and -Y is UP -> needs 180 deg X flip [1, 0, 0, 0] to align upright in Three.js
-  const sceneRotation = isTriangle
-    ? [1, 0, 0, 0]
-    : [-0.7071068, 0, 0, 0.7071068];
+  let isImage = STATE.trainingMethod === 'image2splat' || STATE.activeScene?.trainingMethod === 'image2splat' || STATE.activeScene?.isImage === true;
+  if (!isImage && url) {
+    const modelId = url.split('/').pop().replace(/\.(splat|ply)$/, '');
+    const found = STATE.recentModels?.find((m) => m.name === modelId || m.jobId === modelId || (m.filename && url.includes(m.filename)));
+    if (found?.isImage || found?.trainingMethod === 'image2splat' || /\.(jpe?g|png|webp)$/i.test(found?.originalFilename || '')) {
+      isImage = true;
+    }
+  }
 
-  console.log(`[Splatris] Loading splat scene via DropInViewer.addSplatScene('${url}', format=${format}, method=${isTriangle ? 'triangle' : '3dgs'})...`);
+  // Single-Image (Image2Splat): ray unprojection already sets +Y as up and -Z as forward -> needs identity [0, 0, 0, 1] to remain upright!
+  // Triangle Splatting (raw COLMAP): ground plane is in X-Z and -Y is UP -> needs 180 deg X flip [1, 0, 0, 0] to align upright in Three.js
+  // Nerfstudio (3DGS): uses Z-up coordinates -> needs -90 deg X rotation (quaternion [-0.7071068, 0, 0, 0.7071068])
+  const sceneRotation = isImage
+    ? [0, 0, 0, 1]
+    : (isTriangle
+      ? [1, 0, 0, 0]
+      : [-0.7071068, 0, 0, 0.7071068]);
+
+  console.log(`[Splatris] Loading splat scene via DropInViewer.addSplatScene('${url}', format=${format}, method=${isImage ? 'image2splat' : (isTriangle ? 'triangle' : '3dgs')})...`);
 
   try {
     await dropInViewer.addSplatScene(url, {
@@ -3035,7 +3047,7 @@ async function executeEndToEndPipeline(file) {
 
   const fileName = (file?.name || '').toLowerCase();
   const fileMime = (file?.type || '').toLowerCase();
-  const isImageFile = fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') || fileMime.startsWith('image/');
+  const isImageFile = fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') || fileName.endsWith('.webp') || fileMime.startsWith('image/');
   const isVideoFile = fileName.endsWith('.mp4') || fileName.endsWith('.mov') || fileMime.startsWith('video/');
 
   if (!isImageFile && !isVideoFile) {
@@ -3048,15 +3060,15 @@ async function executeEndToEndPipeline(file) {
   // If it is currently on Instant Object, switch it to Standard 3DGS.
   if (isVideoFile) {
     if (STATE.trainingMethod === 'image2splat') {
-      setTrainingMethod('3dgs');
+      setTrainingMethod('3dgs', true);
       showToast('Walkthrough video detected — switched to Standard 3DGS pipeline', 'info', 3000);
     }
   }
 
-  // IF IMAGE (.jpg, .jpeg, .png): Automatically switch the Training Pipeline toggle to Instant Object (Single Image).
+  // IF IMAGE (.jpg, .jpeg, .png, .webp): Automatically switch the Training Pipeline toggle to Instant Object (Single Image).
   if (isImageFile) {
     if (STATE.trainingMethod !== 'image2splat') {
-      setTrainingMethod('image2splat');
+      setTrainingMethod('image2splat', true);
       showToast('Single photo detected — switched to Instant Object Scan mode', 'info', 3000);
     }
   }
@@ -3218,7 +3230,7 @@ async function executeEndToEndPipeline(file) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoId: uploadData.videoId,
-          originalFilename: uploadData.originalName || uploadData.filename,
+          originalFilename: uploadData.originalName || uploadData.filename || file?.name || 'photo.jpg',
           deviceName: 'Instant Object (Single Image)',
           uploadTimestamp: new Date().toISOString(),
           colmapMatcher: 'none',
@@ -3426,7 +3438,17 @@ function pollJobUntilReady(jobId, uploadData, decisions) {
             // --- Step 5: Dynamic 3D Scene Replacement ---
             const modelUrl = data.outputModelUrl || '/uploads/models/scene.splat';
             STATE.activeModelUrl = modelUrl;
+
+            const isCompletedImageJob = (data.trainingMethod || STATE.trainingMethod) === 'image2splat' || uploadData.isImage || /\.(jpe?g|png|webp)$/i.test(uploadData.originalName || '');
+            STATE.activeScene = {
+              ...uploadData,
+              isImage: isCompletedImageJob,
+              trainingMethod: isCompletedImageJob ? 'image2splat' : (data.trainingMethod || STATE.trainingMethod || '3dgs'),
+              url: modelUrl,
+            };
+
             await loadGaussianSplatScene(modelUrl, true);
+            await new Promise((r) => setTimeout(r, 200));
             await loadRecentScenes();
 
             // --- Step 6: Spatial Audio RAG Context Synchronization ---
@@ -3442,12 +3464,14 @@ function pollJobUntilReady(jobId, uploadData, decisions) {
             updateSpaceRagPresets(uploadData.videoId);
 
             // Post Guide Announcement
+            const isImageJob = (data.trainingMethod || STATE.trainingMethod) === 'image2splat' || uploadData.isImage;
             const methodTitle = (data.trainingMethod || STATE.trainingMethod) === 'triangle'
               ? 'Triangle Splatting (Mesh-based)'
-              : '3D Gaussians';
+              : (isImageJob ? 'Instant Object (Image2Splat)' : '3D Gaussians');
+            const targetName = uploadData.originalName || file?.name || (isImageJob ? 'photo.jpg' : 'Walkthrough.mp4');
             appendChatMessage(
               'agent',
-              `🎉 Space reconstruction for "${uploadData.originalName}" is complete! ${methodTitle} model loaded into viewport. You can now explore the space in WebXR or free roam.`
+              `🎉 ${isImageJob ? 'Object' : 'Space'} reconstruction for "${targetName}" is complete! ${methodTitle} model loaded into viewport. You can now explore the ${isImageJob ? 'object' : 'space'} in WebXR or free roam.`
             );
 
             resolve();
@@ -5933,16 +5957,23 @@ function createRecentSceneChip(m, isCurrentActive) {
     displaySubtitle = `${devName} • ${splatCountStr} splats`;
   }
 
-  const method = m.trainingMethod || (m.format === 'ply' ? 'triangle' : (m.isImage ? 'image2splat' : '3dgs'));
+  const isImageModel = Boolean(
+    m.isImage ||
+    m.trainingMethod === 'image2splat' ||
+    /\.(jpe?g|png|webp)$/i.test(m.originalFilename || m.filename || '') ||
+    (m.deviceName && (m.deviceName.includes('Single Image') || m.deviceName.includes('Instant Object')))
+  );
+
+  const method = isImageModel ? 'image2splat' : (m.trainingMethod || (m.format === 'ply' ? 'triangle' : '3dgs'));
   let methodBadgeClass = 'badge-3dgs';
   let methodBadgeText = 'Standard 3DGS';
 
-  if (method === 'triangle') {
-    methodBadgeClass = 'badge-triangle';
-    methodBadgeText = 'Triangle Mesh';
-  } else if (method === 'image2splat' || m.isImage) {
+  if (isImageModel || method === 'image2splat') {
     methodBadgeClass = 'badge-image';
     methodBadgeText = 'Instant Object';
+  } else if (method === 'triangle') {
+    methodBadgeClass = 'badge-triangle';
+    methodBadgeText = 'Triangle Mesh';
   }
 
   // Delete button
@@ -6044,9 +6075,34 @@ async function loadRecentScenes() {
       });
     };
 
-    const videoModels = dedupeModels(data.videoModels || []).slice(0, 3);
-    const imageModels = dedupeModels(data.imageModels || []).slice(0, 3);
-    const combinedModels = dedupeModels(data.models || [...videoModels, ...imageModels]);
+    // Helper to determine if a model is an image/photo
+    const isModelImage = (m) => Boolean(
+      m.isImage === true ||
+      m.trainingMethod === 'image2splat' ||
+      /\.(jpe?g|png|webp)$/i.test(m.originalFilename || m.filename || '') ||
+      (m.deviceName && (m.deviceName.includes('Single Image') || m.deviceName.includes('Instant Object')))
+    );
+
+    const cleanVideoModels = [];
+    const cleanImageModels = [];
+
+    for (const m of (data.imageModels || [])) {
+      cleanImageModels.push({ ...m, isImage: true, trainingMethod: 'image2splat' });
+    }
+
+    for (const m of (data.videoModels || [])) {
+      if (isModelImage(m)) {
+        if (!cleanImageModels.some((img) => img.jobId === m.jobId || img.name === m.name)) {
+          cleanImageModels.push({ ...m, isImage: true, trainingMethod: 'image2splat' });
+        }
+      } else {
+        cleanVideoModels.push(m);
+      }
+    }
+
+    const videoModels = dedupeModels(cleanVideoModels).slice(0, 3);
+    const imageModels = dedupeModels(cleanImageModels).slice(0, 3);
+    const combinedModels = dedupeModels([...videoModels, ...imageModels]);
 
     STATE.recentModels = combinedModels;
     STATE.recentVideoModels = videoModels;
@@ -6132,6 +6188,11 @@ async function loadRecentScenes() {
           if (dot) dot.classList.add('online');
         }
       }
+    }
+
+    if (STATE.trainingMethod === 'image2splat' || (STATE.activeScene && STATE.activeScene.isImage)) {
+      const objWidget = document.getElementById('section-recent-objects');
+      if (objWidget) objWidget.classList.remove('collapsed');
     }
   } catch (err) {
     console.warn('[Splatris] Could not load recent scenes:', err);

@@ -70,110 +70,127 @@ export function createJob({
     return { ...existingJob, isExisting: true };
   }
 
-  const job = {
-    jobId,
-    videoId: videoId || 'room-scan',
-    sceneId: effectiveSceneId,
-    cachedSceneId: effectiveCachedId,
-    bypassColmap: isBypass,
-    originalFilename: originalFilename || (videoId ? `${videoId}.mp4` : 'Walkthrough.mp4'),
-    deviceName: deviceName || 'Mobile Camera',
-    uploadTimestamp: uploadTimestamp || new Date().toISOString(),
-    colmapMatcher,
-    recommendedIterations: clampedIterations,
-    filteredFrameIndices,
-    trainingMethod: method,
-    status: 'processing', // 'processing' | 'completed' | 'failed' | 'aborted'
-    stage: isBypass
-      ? '⚡ COLMAP Cache Hit! Skipping upload & feature extraction...'
-      : 'Submitting job to Nebius GPU pipeline',
-    progress: isBypass ? 35 : 5,
-    outputModelUrl,
-    error: null,
-    createdAt: new Date().toISOString(),
-    completedAt: null,
-  };
+    const isImageMethod = method === 'image2splat' || /\.(jpe?g|png|webp)$/i.test(originalFilename || '') || (deviceName && (deviceName.includes('Single Image') || deviceName.includes('Instant Object')));
+    const effectiveMethod = isImageMethod ? 'image2splat' : method;
 
-  // If videoId was uploaded, attempt to load any cached video_meta.json
-  if (videoId && !isBypass) {
-    const metaPath = path.resolve('uploads', 'frames', videoId, 'video_meta.json');
-    fs.readFile(metaPath, 'utf-8').then((raw) => {
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed.originalFilename) job.originalFilename = parsed.originalFilename;
-        if (parsed.deviceName) job.deviceName = parsed.deviceName;
-        if (parsed.uploadTimestamp) job.uploadTimestamp = parsed.uploadTimestamp;
-      } catch { }
-    }).catch(() => { });
+    const job = {
+      jobId,
+      videoId: videoId || 'room-scan',
+      sceneId: effectiveSceneId,
+      cachedSceneId: effectiveCachedId,
+      bypassColmap: isBypass,
+      originalFilename: originalFilename || (videoId ? `${videoId}.${isImageMethod ? 'jpg' : 'mp4'}` : (isImageMethod ? 'photo.jpg' : 'Walkthrough.mp4')),
+      deviceName: deviceName || (isImageMethod ? 'Instant Object (Single Image)' : 'Mobile Camera'),
+      uploadTimestamp: uploadTimestamp || new Date().toISOString(),
+      colmapMatcher,
+      recommendedIterations: clampedIterations,
+      filteredFrameIndices,
+      trainingMethod: effectiveMethod,
+      isImage: isImageMethod,
+      status: 'processing', // 'processing' | 'completed' | 'failed' | 'aborted'
+      stage: isBypass
+        ? '⚡ COLMAP Cache Hit! Skipping upload & feature extraction...'
+        : 'Submitting job to Nebius GPU pipeline',
+      progress: isBypass ? 35 : 5,
+      outputModelUrl,
+      error: null,
+      createdAt: new Date().toISOString(),
+      completedAt: null,
+    };
+
+    // If videoId was uploaded, attempt to load any cached video_meta.json
+    if (videoId && !isBypass) {
+      const metaPath = path.resolve('uploads', 'frames', videoId, 'video_meta.json');
+      fs.readFile(metaPath, 'utf-8').then((raw) => {
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed.originalFilename) job.originalFilename = parsed.originalFilename;
+          if (parsed.deviceName) job.deviceName = parsed.deviceName;
+          if (parsed.uploadTimestamp) job.uploadTimestamp = parsed.uploadTimestamp;
+          if (parsed.trainingMethod === 'image2splat' || parsed.isImage) {
+            job.trainingMethod = 'image2splat';
+            job.deviceName = 'Instant Object (Single Image)';
+          }
+        } catch { }
+      }).catch(() => { });
+    }
+
+    jobs.set(jobId, job);
+
+    // Launch the real Nebius GPU worker asynchronously
+    executeGpuJobAsync(job);
+
+    return job;
   }
 
-  jobs.set(jobId, job);
+  /**
+   * Executes the real training pipeline and streams live status updates into the job record.
+   */
+  async function executeGpuJobAsync(job) {
+    try {
+      await fs.mkdir(MODELS_DIR, { recursive: true });
 
-  // Launch the real Nebius GPU worker asynchronously
-  executeGpuJobAsync(job);
-
-  return job;
-}
-
-/**
- * Executes the real training pipeline and streams live status updates into the job record.
- */
-async function executeGpuJobAsync(job) {
-  try {
-    await fs.mkdir(MODELS_DIR, { recursive: true });
-
-    const modelPath = await runNebiusGpuTraining({
-      jobId: job.jobId,
-      videoId: job.videoId,
-      sceneId: job.sceneId || job.videoId,
-      cachedSceneId: job.cachedSceneId,
-      bypassColmap: job.bypassColmap,
-      colmapMatcher: job.colmapMatcher,
-      recommendedIterations: job.recommendedIterations,
-      filteredFrameIndices: job.filteredFrameIndices,
-      trainingMethod: job.trainingMethod || '3dgs',
-      onProgress: (progress, stage) => {
-        if (job.status === 'aborted') return;
-        job.progress = progress;
-        job.stage = stage;
-      },
-    });
-
-    if (job.status === 'aborted') return;
-
-    job.status = 'completed';
-    job.stage = 'Completed';
-    job.progress = 100;
-    job.completedAt = new Date().toISOString();
-    job.outputModelUrl = `/uploads/models/${path.basename(modelPath)}`;
-
-    // Persist model metadata sidecar (.json) for meaningful naming in Recent Scenes
-    const modelMeta = {
-      jobId: job.jobId,
-      originalFilename: job.originalFilename || 'Walkthrough.mp4',
-      deviceName: job.deviceName || 'Mobile Camera',
-      uploadTimestamp: job.uploadTimestamp || job.createdAt,
-      trainingMethod: job.trainingMethod || '3dgs',
-      completedAt: job.completedAt,
-    };
-    await fs.writeFile(
-      path.join(MODELS_DIR, `${job.jobId}.json`),
-      JSON.stringify(modelMeta, null, 2)
-    ).catch((err) => {
-      console.warn('Notice: Could not write model metadata sidecar:', err.message);
-    });
-
-    // Also update default scene.splat or scene.ply to the newly trained model
-    if (modelPath.endsWith('.splat')) {
-      await fs.copyFile(modelPath, DEFAULT_SPLAT_PATH).catch((err) => {
-        console.warn('Notice: Could not update default scene.splat:', err.message);
+      const modelPath = await runNebiusGpuTraining({
+        jobId: job.jobId,
+        videoId: job.videoId,
+        sceneId: job.sceneId || job.videoId,
+        cachedSceneId: job.cachedSceneId,
+        bypassColmap: job.bypassColmap,
+        colmapMatcher: job.colmapMatcher,
+        recommendedIterations: job.recommendedIterations,
+        filteredFrameIndices: job.filteredFrameIndices,
+        trainingMethod: job.trainingMethod || '3dgs',
+        onProgress: (progress, stage) => {
+          if (job.status === 'aborted') return;
+          job.progress = progress;
+          job.stage = stage;
+        },
       });
-    } else if (modelPath.endsWith('.ply')) {
-      const defaultPlyPath = path.join(MODELS_DIR, 'scene.ply');
-      await fs.copyFile(modelPath, defaultPlyPath).catch((err) => {
-        console.warn('Notice: Could not update default scene.ply:', err.message);
+
+      if (job.status === 'aborted') return;
+
+      const isImageJob = job.trainingMethod === 'image2splat' ||
+        (job.deviceName && job.deviceName.includes('Single Image')) ||
+        /\.(jpe?g|png|webp)$/i.test(job.originalFilename || '');
+
+      // Persist model metadata sidecar (.json) BEFORE marking completed to eliminate any client polling race condition
+      const modelMeta = {
+        jobId: job.jobId,
+        originalFilename: job.originalFilename || (isImageJob ? 'photo.jpg' : 'Walkthrough.mp4'),
+        deviceName: job.deviceName || (isImageJob ? 'Instant Object (Single Image)' : 'Mobile Camera'),
+        uploadTimestamp: job.uploadTimestamp || job.createdAt,
+        trainingMethod: isImageJob ? 'image2splat' : (job.trainingMethod || '3dgs'),
+        isImage: isImageJob,
+        completedAt: new Date().toISOString(),
+      };
+      await fs.writeFile(
+        path.join(MODELS_DIR, `${job.jobId}.json`),
+        JSON.stringify(modelMeta, null, 2)
+      ).catch((err) => {
+        console.warn('Notice: Could not write model metadata sidecar:', err.message);
       });
-    }
+
+      job.status = 'completed';
+      job.stage = 'Completed';
+      job.progress = 100;
+      job.completedAt = modelMeta.completedAt;
+      job.outputModelUrl = `/uploads/models/${path.basename(modelPath)}`;
+      job.isImage = isImageJob;
+      job.trainingMethod = modelMeta.trainingMethod;
+
+      // Also update default scene.splat or scene.ply ONLY for room walkthrough spaces (NEVER for single image photos!)
+      if (!isImageJob && job.trainingMethod !== 'image2splat') {
+        if (modelPath.endsWith('.splat')) {
+          await fs.copyFile(modelPath, DEFAULT_SPLAT_PATH).catch((err) => {
+            console.warn('Notice: Could not update default scene.splat:', err.message);
+          });
+        } else if (modelPath.endsWith('.ply')) {
+          const defaultPlyPath = path.join(MODELS_DIR, 'scene.ply');
+          await fs.copyFile(modelPath, defaultPlyPath).catch((err) => {
+            console.warn('Notice: Could not update default scene.ply:', err.message);
+          });
+        }
+      }
 
     console.log(`[JobRunner] Job ${job.jobId} (${job.trainingMethod}, ${job.deviceName}, ${job.originalFilename}) successfully finished. Model saved at ${modelPath}`);
 
@@ -259,29 +276,75 @@ export async function cleanupPostTraining(job) {
 }
 
 /**
- * Keeps only the last N .splat models in uploads/models/, automatically pruning older ones.
+ * Keeps only the last N models in uploads/models/, categorized by video spaces and photo objects,
+ * strictly protecting default scene and Triangle Splatting mesh from pruning.
  */
 export async function pruneOldModels(keepCount = 3) {
   try {
     await fs.mkdir(MODELS_DIR, { recursive: true });
     const entries = await fs.readdir(MODELS_DIR, { withFileTypes: true });
-    const jobSplats = [];
+
+    // Map sidecar JSON metadata
+    const sidecars = new Map();
+    for (const entry of entries) {
+      if (entry.isFile() && entry.name.endsWith('.json')) {
+        try {
+          const raw = await fs.readFile(path.join(MODELS_DIR, entry.name), 'utf-8');
+          const data = JSON.parse(raw);
+          const base = entry.name.replace('.json', '');
+          sidecars.set(base, data);
+        } catch { }
+      }
+    }
+
+    const videoSplats = [];
+    const imageSplats = [];
 
     for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith('.splat') || entry.name === 'scene.splat') continue;
+      if (!entry.isFile() || !entry.name.endsWith('.splat')) continue;
+      if (entry.name === 'scene.splat') continue;
+      // Protected: triangle mesh must NEVER be pruned
+      if (entry.name.startsWith('92badd1d')) continue;
+
+      const baseName = entry.name.replace(/\.splat$/, '');
+      const memoryJob = jobs.get(baseName);
+      const meta = sidecars.get(baseName) || (memoryJob ? {
+        trainingMethod: memoryJob.trainingMethod,
+        isImage: memoryJob.isImage || memoryJob.trainingMethod === 'image2splat',
+        deviceName: memoryJob.deviceName,
+        originalFilename: memoryJob.originalFilename,
+      } : {});
+      const isImage = meta.trainingMethod === 'image2splat' ||
+        meta.isImage === true ||
+        (meta.deviceName && (meta.deviceName.includes('Single Image') || meta.deviceName.includes('Instant Object'))) ||
+        /\.(jpe?g|png|webp)$/i.test(meta.originalFilename || '') ||
+        (memoryJob && (memoryJob.trainingMethod === 'image2splat' || memoryJob.isImage === true));
+
       const filePath = path.join(MODELS_DIR, entry.name);
       const stat = await fs.stat(filePath);
-      jobSplats.push({ filePath, name: entry.name, mtime: stat.mtime });
+      const item = { filePath, name: entry.name, mtime: stat.mtime };
+
+      if (isImage) {
+        imageSplats.push(item);
+      } else {
+        videoSplats.push(item);
+      }
     }
 
     // Sort newest first
-    jobSplats.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+    videoSplats.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
+    imageSplats.sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
 
-    // Prune models past the keepCount limit
-    const toDelete = jobSplats.slice(keepCount);
-    for (const item of toDelete) {
+    // Prune excess video models past keepCount limit (never pruning triangle mesh)
+    for (const item of videoSplats.slice(keepCount)) {
       await fs.unlink(item.filePath).catch(() => { });
-      console.log(`[JobService] Pruned older model: ${item.name}`);
+      console.log(`[JobService] Pruned older video model: ${item.name}`);
+    }
+
+    // Prune excess image models past keepCount limit
+    for (const item of imageSplats.slice(keepCount)) {
+      await fs.unlink(item.filePath).catch(() => { });
+      console.log(`[JobService] Pruned older image model: ${item.name}`);
     }
 
     // Clean up any legacy job_ directories in uploads/models/
@@ -342,21 +405,35 @@ export async function getRecentCategorizedModels(limit = 3) {
       const sizeMb = (sizeBytes / (1024 * 1024)).toFixed(1);
 
       const baseName = entry.name.replace(/\.(splat|ply)$/, '');
-      const meta = sidecars.get(baseName) || {};
+      const memoryJob = jobs.get(baseName);
+      const meta = sidecars.get(baseName) || (memoryJob ? {
+        jobId: memoryJob.jobId,
+        originalFilename: memoryJob.originalFilename,
+        deviceName: memoryJob.deviceName,
+        uploadTimestamp: memoryJob.uploadTimestamp || memoryJob.createdAt,
+        trainingMethod: memoryJob.trainingMethod,
+        isImage: memoryJob.isImage || memoryJob.trainingMethod === 'image2splat' || /\.(jpe?g|png|webp)$/i.test(memoryJob.originalFilename || ''),
+        completedAt: memoryJob.completedAt,
+      } : {});
 
-      const originalFilename = meta.originalFilename || (baseName === 'scene' ? 'scene.splat' : 'Walkthrough.mp4');
-      const deviceName = meta.deviceName || 'Mobile Camera';
-      const timestamp = meta.uploadTimestamp || stat.mtime.toISOString();
+      const isImage = meta.trainingMethod === 'image2splat' ||
+        meta.isImage === true ||
+        (meta.deviceName && (meta.deviceName.includes('Single Image') || meta.deviceName.includes('Instant Object'))) ||
+        /\.(jpe?g|png|webp)$/i.test(meta.originalFilename || '') ||
+        (memoryJob && (memoryJob.trainingMethod === 'image2splat' || memoryJob.isImage === true || /\.(jpe?g|png|webp)$/i.test(memoryJob.originalFilename || '')));
+
+      const isVideo = !isImage;
+      const trainingMethod = isImage ? 'image2splat' : (meta.trainingMethod || (isPly ? 'triangle' : '3dgs'));
+
+      const originalFilename = meta.originalFilename || memoryJob?.originalFilename || (baseName === 'scene' ? 'tank_internet.mp4' : (isImage ? 'photo.jpg' : 'Walkthrough.mp4'));
+      const deviceName = meta.deviceName || memoryJob?.deviceName || (isImage ? 'Instant Object (Single Image)' : 'Mobile Camera');
+      const timestamp = meta.uploadTimestamp || memoryJob?.uploadTimestamp || stat.mtime.toISOString();
       const dateStr = formatDateTimeShort(timestamp);
 
       // Card Title: [Date], [Time] - [Original Filename] (e.g., "Sep 25, 10:13 - IMG_9390.MOV")
       const title = `${dateStr} - ${originalFilename}`;
       // Card Subtitle: [Device Name] • [Splat Count] (e.g., "iPhone 11 Pro • 1,570,303 splats")
       const subtitle = `${deviceName} • ${splatCount.toLocaleString()} splats`;
-
-      const isImage = meta.trainingMethod === 'image2splat' || (deviceName && deviceName.includes('Single Image'));
-      const isVideo = !isImage;
-      const trainingMethod = meta.trainingMethod || (isPly ? 'triangle' : '3dgs');
 
       const chunksPath = path.join(MODELS_DIR, `${baseName}.chunks.bin`);
       let chunksUrl = null;
@@ -438,8 +515,16 @@ export async function getRecentCategorizedModels(limit = 3) {
       return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime();
     });
 
-    let videoModels = uniqueModels.filter((m) => !m.isImage).slice(0, limit);
+    let videoModels = uniqueModels.filter((m) => !m.isImage);
     const imageModels = uniqueModels.filter((m) => m.isImage).slice(0, limit);
+
+    // Guaranteed Triangle Mesh preservation:
+    // Ensure the triangle mesh model (format: 'ply' or trainingMethod: 'triangle') is ALWAYS present in videoModels
+    const triangleMesh = uniqueModels.find((m) => m.trainingMethod === 'triangle' || m.format === 'ply');
+    if (triangleMesh && !videoModels.slice(0, limit).some((m) => m.jobId === triangleMesh.jobId || m.name === triangleMesh.name)) {
+      videoModels = [videoModels[0], triangleMesh, ...videoModels.slice(1).filter((m) => m.jobId !== triangleMesh.jobId && m.name !== triangleMesh.name)].filter(Boolean);
+    }
+    videoModels = videoModels.slice(0, limit);
 
     // If videoModels is empty and defaultSpace exists, ensure defaultSpace is present
     if (videoModels.length === 0 && defaultSpace) {

@@ -93,7 +93,7 @@ router.post('/upload', handleUpload, async (req, res) => {
     await fs.mkdir(targetFramesDir, { recursive: true });
 
     const ext = path.extname(uploadedFile.filename).toLowerCase();
-    const isImage = ['.jpg', '.jpeg', '.png'].includes(ext) || (uploadedFile.mimetype && uploadedFile.mimetype.startsWith('image/'));
+    const isImage = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext) || (uploadedFile.mimetype && uploadedFile.mimetype.startsWith('image/'));
 
     // --- Fast Branch for Instant Object Mode (Single Image) ---
     if (isImage) {

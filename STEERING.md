@@ -1250,16 +1250,31 @@ cloudflared tunnel --url http://localhost:3000
     - Intercepted Right Trigger pulls to immediately call `stopSpatialAudio()`, cutting the active Web Audio buffer node in 0ms and flushing `ttsSentenceQueue`.
     - Implemented `activeInspectionId` generation tracking to invalidate stale in-flight Tavily/Nemotron responses, ensuring smooth and instant UX transitions to new targets without voice collisions.
 
-
-
-
-
-
-
-
-
-
-
-
+- [x] **7. Milestone 50: Photo vs. Video Pipeline Categorization & Triangle Mesh Permanence ([services/jobService.js](file:///Users/akif/Projects/splatris/services/jobService.js), [public/app.js](file:///Users/akif/Projects/splatris/public/app.js), [routes/spatial.routes.js](file:///Users/akif/Projects/splatris/routes/spatial.routes.js))**:
+  - **Remote GPU Worker Migration (195.242.13.85:8000)**:
+    - Updated active Nebius L40S GPU worker endpoint in `.env`, `services/jobService.js`, and `routes/job.routes.js` to `http://195.242.13.85:8000`.
+    - Verified health check: NVIDIA L40S with 44.4 GB VRAM online.
+  - **Strict Photo vs. Video Pipeline Auto-Routing**:
+    - In `public/app.js` (`executeEndToEndPipeline`), detecting single image drops (`.jpg`, `.jpeg`, `.png`, `.webp`, or `image/*` MIME) instantly auto-switches pipeline to `Instant Object (Image2Splat)`.
+    - In `routes/spatial.routes.js`, added `.webp` support and verified immediate bypass of video quality gatekeeper for images.
+    - Preserves authentic filename (`tankphoto.jpg`) throughout upload and job dispatch, preventing default fallback to `Walkthrough.mp4`.
+  - **Single Photo Models Never Overwrite Default `scene.splat`**:
+    - In `services/jobService.js` (`executeGpuJobAsync`), guarded `scene.splat` / `scene.ply` updates with `if (!isImageJob && job.trainingMethod !== 'image2splat')`.
+    - Prevents single object reconstructions from replacing the default room walkthrough space.
+  - **Guaranteed Triangle Splatting Mesh Permanence**:
+    - In `services/jobService.js` (`getRecentCategorizedModels`), triangle mesh space (`92badd1d...` / `scene.chunks.bin`) is explicitly preserved in `videoModels` and can never be evicted by new video scans.
+  - **Category-Aware Model Pruning & Triangle Mesh Immunity**:
+    - Re-architected `pruneOldModels()` to isolate video models from image models (keeping up to 3 video spaces AND up to 3 photo objects separately).
+    - Hardened `92badd1d*` and `scene.splat` against file eviction during background job cleanup.
+  - **Race Condition & Sidecar Writing Fix ([services/jobService.js](file:///Users/akif/Projects/splatris/services/jobService.js))**:
+    - Identified root cause of photo scans momentarily falling back to `Walkthrough.mp4` under `RECENT SPACES (VIDEO)`: `job.status = 'completed'` was previously emitted prior to disk flush of `[jobId].json`, causing the initial client poll to query `/api/models/recent` before the sidecar was present on disk.
+    - Moved sidecar file write to strictly precede `job.status = 'completed'`.
+    - Added in-memory fallback to `jobs.get(baseName)` in `getRecentCategorizedModels` and `pruneOldModels` so metadata is immediately accessible regardless of filesystem timing.
+  - **Strict Client-Side Categorization Filter & Upright Rotation Fix ([public/app.js](file:///Users/akif/Projects/splatris/public/app.js))**:
+    - In `loadRecentScenes()`, added client-side defensive filter (`isModelImage()`) that inspects both `data.videoModels` and `data.imageModels`, automatically routing any model with photo filename extensions or `image2splat` method directly into `imageModels`.
+    - In `loadGaussianSplatScene()`, added orientation check: single-image `image2splat` models have pinhole unprojected coordinates with `+Y` already as UP. Replaced Nerfstudio's -90° X rotation with identity quaternion `[0, 0, 0, 1]`, preventing the doorway object from lying flat on the floor and ensuring it stands upright.
+    - Added pre-render `STATE.activeScene` assignment and 200ms settling delay in `pollJobUntilReady()`.
+    - Bumped `public/index.html` cache buster to `v=20261006_photo_categorization_v22`.
+    - Re-launched server daemon with live changes applied.
 
 
