@@ -290,20 +290,20 @@ if ('xr' in navigator) {
 
     // 2. RIGHT CONTROLLER TRIGGER: Exclusively dedicated to 3D Scene Scanning / Tavily Grounding!
     // (Left Trigger exclusively handles panel button selection)
-    // Cooldown check: 2.5 seconds debounce between scans to prevent multi-trigger spam
+    // Anti-chatter debounce: 350ms
     const now = Date.now();
-    if (STATE.lastTriggerScanTime && (now - STATE.lastTriggerScanTime < 2500)) {
-      console.log(`[WebXR] Right trigger scan ignored: Cooldown active (${Math.ceil((2500 - (now - STATE.lastTriggerScanTime)) / 1000)}s remaining)`);
+    if (STATE.lastTriggerScanTime && (now - STATE.lastTriggerScanTime < 350)) {
       return;
     }
-
-    if (STATE.isRaycastQuerying) {
-      console.log('[WebXR] Right trigger scan ignored: Query already in progress');
-      return;
-    }
-
     STATE.lastTriggerScanTime = now;
-    console.log('[WebXR] Right Point Trigger pulled: Scanning 3D target with Tavily & Nemotron...');
+
+    // Immediately stop any currently playing or queued audio so voices NEVER overlap!
+    stopSpatialAudio();
+
+    // Unlock previous query lock so the new scan immediately interrupts and takes over
+    unlockRaycastQuery();
+
+    console.log('[WebXR] Right Point Trigger pulled: Immediately stopping audio & starting new scan...');
 
     if (typeof performRaycastSelectionXR === 'function') {
       performRaycastSelectionXR(origin, direction).catch((err) => {
@@ -5081,6 +5081,7 @@ function selectXRQuestion(index) {
 
   // Stop any currently playing audio immediately so voices never overlap!
   stopSpatialAudio();
+  activeInspectionId++;
 
   // Update HUD text immediately to indicate query in progress
   updateXRHUDContent({
@@ -5203,11 +5204,9 @@ function getSpatialTargetName(hitMesh = null) {
 }
 
 async function performRaycastSelectionXR(origin, direction) {
-  // Prevent WebXR multi-trigger spam & API pipeline crash
-  if (STATE.isRaycastQuerying) {
-    console.log('[Splatris] WebXR raycast ignored: inspection query already in progress');
-    return;
-  }
+  // Immediately stop any ongoing audio playback and discard queued sentences
+  stopSpatialAudio();
+  unlockRaycastQuery();
 
   try {
     const GS = window.GaussianSplats3D || window['Gaussian Splats 3D'];
@@ -5276,6 +5275,7 @@ async function performRaycastSelectionXR(origin, direction) {
       title: 'SCANNING OBJECT...',
       subtitle: hitPoint ? `Target Hit [${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}]` : 'Raycast Registered',
       status: `Scanning ${targetName}... Fetching data from Tavily.`,
+      questions: [],
     });
 
     await triggerSpatialObjectInspection(hitPoint, null, null, targetName);
@@ -5310,12 +5310,16 @@ function unlockRaycastQuery() {
   console.log('[Splatris] Raycast state lock released (ready for next inspection)');
 }
 
+let activeInspectionId = 0;
+
 async function triggerSpatialObjectInspection(hitPoint, screenX, screenY, explicitTargetName = null) {
-  // Prevent simultaneous raycasts / duplicate API calls
-  if (STATE.isRaycastQuerying) {
-    console.log('[Splatris] Object inspection ignored: query already active');
-    return;
-  }
+  // Immediately stop any currently playing or pending audio so voices NEVER overlap!
+  stopSpatialAudio();
+
+  // Invalidate any prior in-flight inspection by incrementing the inspection generation ID
+  const inspectionId = ++activeInspectionId;
+
+  unlockRaycastQuery();
   lockRaycastQuery();
 
   initSpatialAudio();
@@ -5342,9 +5346,6 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY, explic
   }
 
   // 1. WebXR vs 2D Snapshot Decision:
-  // In WebXR: Meta Quest Browser uses an opaque framebuffer.
-  // DO NOT attempt canvas snapshot. DO NOT call Nemotron.
-  // Pass target object name directly to Tavily.
   let imageBase64 = null;
   if (isInVR) {
     console.log(`[Splatris] WebXR scan active: bypassing canvas snapshot & Nemotron, passing "${targetObjectName}" directly to Tavily`);
@@ -5367,6 +5368,7 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY, explic
     status: isInVR
       ? `Scanning ${targetObjectName}... Fetching data from Tavily.`
       : 'Scanning object... Fetching data from Tavily.',
+    questions: [],
   });
 
   // Automatically open RAG drawer if collapsed (desktop ONLY)
@@ -5419,6 +5421,12 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY, explic
 
     const res = await Promise.race([fetchPromise, timeoutPromise]);
 
+    // If a newer scan started while this request was in flight, discard this result!
+    if (inspectionId !== activeInspectionId) {
+      console.log(`[Splatris] Inspection #${inspectionId} response dropped: newer inspection #${activeInspectionId} active`);
+      return;
+    }
+
     if (!res || !res.success) {
       throw new Error((res && res.error) || 'Failed to inspect object');
     }
@@ -5470,6 +5478,12 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY, explic
       ];
     }
 
+    // Double check that no newer scan has started before updating HUD & speaking
+    if (inspectionId !== activeInspectionId) {
+      console.log(`[Splatris] Inspection #${inspectionId} HUD update dropped (newer scan active)`);
+      return;
+    }
+
     updateXRHUDContent({
       title: (res.objectName || 'OBJECT IDENTIFIED').toUpperCase(),
       subtitle: `${res.category || 'Spatial Element'} • ${Math.round((res.confidence || 0.95) * 100)}% Match`,
@@ -5478,12 +5492,13 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY, explic
     });
 
     // Automatically read summary using Web Audio TTS stream (works in WebXR on Meta Quest & Desktop)
-    if (STATE.audioEnabled) {
+    if (STATE.audioEnabled && inspectionId === activeInspectionId) {
       const speechText = `${res.objectName}. ${summaryText}`;
       speakSpatialAudio(speechText, hitPoint);
     }
     unlockRaycastQuery();
   } catch (err) {
+    if (inspectionId !== activeInspectionId) return;
     console.error('[Splatris] Raycast inspection error:', err);
     const errorMsg = 'Error: Scan failed. Try again.';
     updateChatMessage(typingId, `Target inspection error: ${err.message}`, []);
