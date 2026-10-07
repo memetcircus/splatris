@@ -49,42 +49,55 @@ Whether exploring historical artifacts, inspecting industrial digital twins, or 
 
 ```mermaid
 flowchart TD
-    subgraph Client ["Client Layer (Desktop & Meta Quest VR)"]
+    subgraph Client ["Client Layer (Desktop Browser & Meta Quest WebXR)"]
         UI["WebGL / WebXR Viewport (GaussianSplats3D + Three.js)"]
         HUD["Floating In-VR HUD & Laser Reticle"]
-        Audio["Web Audio API Voiceover Guide & Speech Stream"]
+        Audio["Web Audio API Voiceover Guide & TTS Stream"]
     end
 
     subgraph Backend ["Splatris Node.js Orchestrator"]
-        Server["Express.js Server"]
-        JobService["Job & Model Storage Engine"]
-        RagEngine["Spatial RAG Service"]
+        Server["Express.js Server (Port 3000)"]
+        Gatekeeper["Video Pre-Flight Audit (FFmpeg + Blur Metric)"]
+        JobService["Job & Model Storage Engine (COLMAP Pose Cache)"]
+        RagEngine["Spatial RAG Engine (Strict Scene Guardrail)"]
     end
 
     subgraph AI ["Nebius Token Factory & NVIDIA Models"]
-        NemotronReasoning["nvidia/Nemotron-3-Ultra-550b-a55b (Reasoning & Calibration)"]
-        NemotronVision["Nemotron Vision (Object Identification)"]
+        NemotronCalibration["nvidia/Nemotron-3-Ultra (Audit & Pipeline Calibration)"]
+        NemotronReasoning["nvidia/Nemotron-3-Ultra (Spatial Scene Reasoning)"]
+        NemotronVision["Nemotron Vision (Object Identification from Frustum Crops)"]
     end
 
-    subgraph Grounding ["External Web Grounding"]
-        Tavily["Tavily Search API (Advanced Depth Grounding)"]
+    subgraph Grounding ["Live Web Intelligence"]
+        Tavily["Tavily Search API (Advanced Search Grounding)"]
     end
 
-    subgraph Compute ["Nebius GPU Cloud Worker"]
-        Trainer["3DGS & Triangle Splatting Runner (COLMAP + PyTorch)"]
+    subgraph Compute ["Nebius AI Cloud (NVIDIA® L40S GPU)"]
+        Worker["FastAPI Worker Microservice (Port 8000)"]
+        ColmapSfM["COLMAP Structure-from-Motion (Feature Matching & Poses)"]
+        Trainers["3DGS & Triangle Splatting Runners (PyTorch + CUDA)"]
     end
 
-    UI -->|Spatial Raycast / WebXR Trigger| Server
+    %% Pipeline 1: Video Ingestion & 3D Reconstruction
+    UI -->|1. Upload Walkthrough Video (.mp4 / .mov)| Server
+    Server --> Gatekeeper
+    Gatekeeper -->|Sampled Frames & Motion Stats| NemotronCalibration
+    NemotronCalibration -->|Optimal Matcher & Iteration Calibration| Server
+    Server -->|2. Stream Frame Archive ZIP| Worker
+    Worker --> ColmapSfM
+    ColmapSfM --> Trainers
+    Trainers -->|3. Compiled Binary .splat & .ply Models| JobService
+    JobService -->|4. Load 3D Model into Scene| UI
+
+    %% Pipeline 2: Runtime Exploration, Raycast & Grounded Voice Guide
+    UI -->|Spatial Raycast / Laser Scan / Chat Query| Server
     Server --> RagEngine
-    RagEngine -->|Object Frame Crop| NemotronVision
-    NemotronVision -->|Identified Object| Tavily
-    Tavily -->|Live Web Intelligence| NemotronReasoning
-    NemotronReasoning -->|Grounded Answer| Server
-    Server -->|TTS Audio Stream| Audio
-    Server -->|Scene Update + Questions| HUD
-
-    Server -->|Training Job Dispatch| Trainer
-    Trainer -->|Compiled .splat Models| JobService
+    RagEngine -->|Camera Frustum Frame Crop| NemotronVision
+    NemotronVision -->|Identified Object Name| Tavily
+    Tavily -->|Verified Real-World Facts & Specifications| NemotronReasoning
+    NemotronReasoning -->|Grounded Answer strictly for Active 3D Scene| Server
+    Server -->|Synthesized TTS Audio Stream| Audio
+    Server -->|Suggested Questions & Transcript| HUD
 ```
 
 ---
@@ -119,9 +132,10 @@ Splatris offloads photogrammetry (COLMAP Structure-from-Motion), 3D Gaussian Spl
 ## 💡 How NVIDIA Nemotron & Nebius Token Factory Accelerate Splatris
 
 1. **`nvidia/Nemotron-3-Ultra-550b-a55b` via Nebius Token Factory**:
-   - **Hyper-Parameter Calibration**: Standard 3DGS training fails if camera trajectory or lighting varies. Nemotron evaluates frame audit metrics and dynamically outputs optimal densification iterations and prune thresholds.
-   - **Spatial RAG Reasoning**: When a user queries an object from a specific 3D location, Nemotron interprets the 3D camera coordinates, bounding box context, and Tavily grounding data to deliver a conversational, spoken-friendly answer tailored to that exact viewpoint.
-   - **High-Throughput Token Factory Speed**: Ultra-low time-to-first-token (TTFT) via Nebius Token Factory enables real-time voice streaming inside WebXR without immersion-breaking latency.
+   - **Autonomous Pre-Flight Video Audit**: Evaluates video frame metrics (Laplacian blur, camera smoothness, coverage) and prevents wasting GPU compute on non-reconstructible footage.
+   - **COLMAP Hyper-Parameter Calibration**: Automatically chooses between `sequential` and `vocab_tree` feature matching and tunes densification iterations based on scene complexity.
+   - **Grounded Spatial Q&A with Strict Guardrails**: Interprets the user's perspective, camera coordinates, and Tavily grounding data. Employs a strict system prompt guardrail ensuring the AI exclusively answers questions related to the active 3D space.
+   - **Ultra-Low Latency via Token Factory**: High-speed token generation enables real-time conversational voice guidance inside WebXR without immersion-breaking latency.
 
 2. **Nemotron Vision via Nebius Token Factory**:
    - Performs zero-shot object identification by projecting 3D intersection points back onto the closest camera frustum frame crop.
@@ -133,9 +147,9 @@ Splatris offloads photogrammetry (COLMAP Structure-from-Motion), 3D Gaussian Spl
 
 ## 🔍 How Tavily Powers Grounded Spatial Intelligence
 
-Splatris integrates the **Tavily Search API** (`search_depth: 'advanced'`) directly into its runtime 3D raycasting pipeline:
-- When an object (e.g., T-54/55 Main Battle Tank) is selected in 3D space, Tavily retrieves verified production history, engineering specifications, armor composition, and combat deployments.
-- Tavily's structured responses supply dynamic **Suggested Questions** that are converted into clickable glassmorphic cards in the WebXR HUD, allowing the user to drill down into technical details with their left controller trigger.
+Splatris integrates the **Tavily Search API** (`search_depth: 'advanced'`) directly into its runtime 3D raycasting and chat pipeline:
+- When an object (e.g., T-54/55 Main Battle Tank or museum artifact) is queried in 3D space, Tavily retrieves verified production history, engineering specifications, and historical facts.
+- The retrieved facts are fed into Nemotron-3-Ultra, ensuring every answer is factual, precise, and up-to-date rather than hallucinated.
 
 ---
 
@@ -167,7 +181,9 @@ PORT=3000
 NEBIUS_API_KEY=your_nebius_token_factory_key
 NEBIUS_BASE_URL=https://api.tokenfactory.nebius.com/v1
 TAVILY_API_KEY=your_tavily_api_key
-NEBIUS_REMOTE_GPU_URL=http://89.169.112.193:8000
+
+# Optional: Remote Nebius GPU Worker (Leave blank to use pre-packaged demo models)
+NEBIUS_GPU_ENDPOINT=http://<nebius-gpu-vm-ip>:8000
 ```
 
 ### 3. Run Locally
