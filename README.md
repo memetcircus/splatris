@@ -75,25 +75,25 @@ flowchart TD
     end
 
     %% Pipeline 1: Video Ingestion & 3D Reconstruction
-    UI -->|1. Upload Walkthrough Video (.mp4 / .mov)| Server
+    UI -->|"1. Upload Walkthrough Video"| Server
     Server --> Gatekeeper
-    Gatekeeper -->|Sampled Frames & Motion Stats| NemotronCalibration
-    NemotronCalibration -->|Optimal Matcher & Iteration Calibration| Server
-    Server -->|2. Stream Frame Archive ZIP| Worker
+    Gatekeeper -->|"Sampled Frames & Motion Stats"| NemotronCalibration
+    NemotronCalibration -->|"Optimal Matcher & Calibration"| Server
+    Server -->|"2. Stream Frame Archive ZIP"| Worker
     Worker --> ColmapSfM
     ColmapSfM --> Trainers
-    Trainers -->|3. Compiled Binary .splat & .ply Models| JobService
-    JobService -->|4. Load 3D Model into Scene| UI
+    Trainers -->|"3. Compiled .splat & .ply Models"| JobService
+    JobService -->|"4. Load 3D Model into Viewport"| UI
 
     %% Pipeline 2: Runtime Exploration, Raycast & Grounded Voice Guide
-    UI -->|Spatial Raycast / Laser Scan / Chat Query| Server
+    UI -->|"Spatial Raycast / Laser Scan / Query"| Server
     Server --> RagEngine
-    RagEngine -->|Camera Frustum Frame Crop| NemotronVision
-    NemotronVision -->|Identified Object Name| Tavily
-    Tavily -->|Verified Real-World Facts & Specifications| NemotronReasoning
-    NemotronReasoning -->|Grounded Answer strictly for Active 3D Scene| Server
-    Server -->|Synthesized TTS Audio Stream| Audio
-    Server -->|Suggested Questions & Transcript| HUD
+    RagEngine -->|"Camera Frustum Frame Crop"| NemotronVision
+    NemotronVision -->|"Identified Object Name"| Tavily
+    Tavily -->|"Verified Facts & Specs"| NemotronReasoning
+    NemotronReasoning -->|"Grounded Scene Answer"| Server
+    Server -->|"Synthesized Voice Narration Stream"| Audio
+    Server -->|"Questions & Transcript"| HUD
 ```
 
 ---
