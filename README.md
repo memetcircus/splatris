@@ -6,10 +6,6 @@
 [![Tavily](https://img.shields.io/badge/Grounding-Tavily%20Search%20API-FF6B6B.svg)](https://tavily.com/)
 [![WebXR](https://img.shields.io/badge/Immersion-WebXR%20Meta%20Quest-black.svg?logo=oculus)](https://www.w3.org/TR/webxr/)
 
-> **Submitted to the Nebius × NVIDIA Global AI Hackathon**  
-> **Track:** Track 2 — Best Apps and Agents Track  
-> **Bonus Award Nomination:** Best Use of Tavily
-
 ---
 
 ## 🌟 Executive Summary
@@ -22,7 +18,7 @@ Whether exploring historical artifacts, inspecting industrial digital twins, or 
 
 ## 🚀 Key Features
 
-### 1. 🎥 Multimodal Video Ingestion & Photogrammetry Pipeline
+### 1. 🎥 Automated Video Ingestion & Photogrammetry Pipeline
 - **Pre-Flight AI Quality Audit**: Evaluates uploaded videos for motion blur, camera smoothness, frame count, and lighting quality using `nvidia/Nemotron-3-Ultra` before dedicating GPU resources.
 - **Autonomous Training Calibration**: Nemotron reasons over scene camera metadata, field of view, and frame density to calculate optimal 3DGS hyper-parameters (learning rates, densification iterations, covariance scaling).
 - **Dual Pipeline Architecture**: Seamlessly switch between **Standard 3DGS** (Gaussian Splatting) for maximum desktop photorealism and **Triangle Splatting** for lightweight, high-FPS mobile VR performance.
