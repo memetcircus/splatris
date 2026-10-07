@@ -14,7 +14,7 @@
 
 ## 🌟 Executive Summary
 
-**Splatris** is a full-stack spatial intelligence platform that transforms raw smartphone videos or photos into interactive, photorealistic **3D Gaussian Splats (3DGS)** and **Triangle Splatting** environments. It connects the 3D reconstructed scene with an embodied **Spatial AI Guide** powered by **NVIDIA Nemotron-3-Ultra** on **Nebius Token Factory**, grounded with real-time web intelligence via **Tavily Search**, and experienced immersively via **WebXR on Meta Quest** with positional 3D spatial audio.
+**Splatris** is a full-stack spatial intelligence platform that transforms raw smartphone videos into interactive, photorealistic **3D Gaussian Splats (3DGS)** and **Triangle Splatting** environments. It connects the 3D reconstructed scene with an embodied **Spatial AI Guide** powered by **NVIDIA Nemotron-3-Ultra** on **Nebius Token Factory**, grounded with real-time web intelligence via **Tavily Search**, and experienced immersively via **WebXR on Meta Quest** with positional 3D spatial audio.
 
 Whether exploring historical artifacts, inspecting industrial digital twins, or analyzing complex equipment, Splatris allows users to step inside the 3D scene, point at physical elements with laser reticles, ask complex contextual questions, and hear articulate answers spatialized in 3D audio directly from the object's real-world coordinates.
 
