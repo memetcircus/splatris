@@ -110,14 +110,17 @@ Instructions:
   "audioSpatialPosition": { "x": number, "y": number, "z": number },
   "sources": string[],
   "reasoning": "Technical rationale"
-}`;
+}
+6. Strict Spatial Guardrail:
+You are a spatial AI guide exclusively focused on the currently reconstructed 3D space. If the user asks a question that is unrelated to the active 3D model, its history, or its spatial context, you MUST politely decline and remind them to ask about the current scene. Never answer general knowledge, coding, or off-topic questions.`;
 
   const completion = await client.chat.completions.create({
     model: 'nvidia/Nemotron-3-Ultra-550b-a55b',
     messages: [
       {
         role: 'system',
-        content: 'You are the Splatris Spatial Audio Guide. You deliver grounded, immersive explanations of 3D Gaussian Splatting scenes and emit optimal spatial audio positions. Respond strictly in valid JSON.',
+        content:
+          'You are a spatial AI guide exclusively focused on the currently reconstructed 3D space. If the user asks a question that is unrelated to the active 3D model, its history, or its spatial context, you MUST politely decline and remind them to ask about the current scene. Never answer general knowledge, coding, or off-topic questions. You deliver grounded, immersive explanations of 3D Gaussian Splatting scenes and emit optimal spatial audio positions. Respond strictly in valid JSON.',
       },
       {
         role: 'user',

@@ -1904,9 +1904,6 @@ const methodSelectedBadge = document.getElementById('method-selected-badge');
 
 // --- Feature Update: Pipeline Caching & Fast Re-Processing UI Controls ---
 const reprocessBanner = document.getElementById('reprocess-banner');
-const reprocessSceneName = document.getElementById('reprocess-scene-name');
-const reprocessTargetName = document.getElementById('reprocess-target-name');
-const reprocessDescText = document.getElementById('reprocess-desc-text');
 const btnReprocessAction = document.getElementById('btn-reprocess-action');
 const btnReprocessLabel = document.getElementById('btn-reprocess-label');
 const btnReprocessUploadNew = document.getElementById('btn-reprocess-upload-new');
@@ -1981,19 +1978,6 @@ function updatePipelineUIForActiveScene() {
   const isSwitchingPipeline = (selectedMethod !== activeMethod) && (selectedMethod === 'triangle' || selectedMethod === '3dgs');
 
   if (isSwitchingPipeline && !STATE.userWantsNewUpload) {
-    // Dynamic Name Binding: Render actual filename of active scene (e.g. tank_internet.mp4)
-    const activeFilename = active?.originalFilename || (active?.name ? `${active.name}.mp4` : 'Walkthrough.mp4');
-    const targetLabel = selectedMethod === 'triangle' ? 'Triangle Splatting (WebXR Optimized)' : 'Standard 3DGS';
-
-    if (reprocessSceneName) {
-      reprocessSceneName.textContent = activeFilename;
-    }
-    if (reprocessTargetName) {
-      reprocessTargetName.textContent = selectedMethod === 'triangle' ? 'Triangle Splatting' : 'Standard 3DGS';
-    }
-    if (reprocessDescText) {
-      reprocessDescText.innerHTML = `This scene (<strong>${escapeHtml(activeFilename)}</strong>) is already processed. You can instantly convert it to <strong>${escapeHtml(targetLabel)}</strong> without waiting for a new upload or initial processing.`;
-    }
     if (btnReprocessLabel) {
       btnReprocessLabel.textContent = selectedMethod === 'triangle'
         ? 'Re-process as Triangle Splatting (Fast)'
@@ -3149,9 +3133,6 @@ function pollJobUntilReady(jobId, uploadData, decisions) {
               modelUrl,
             };
 
-            // Update Presets for the new space
-            updateSpaceRagPresets(uploadData.videoId);
-
             // Post Guide Announcement
             const isImageJob = (data.trainingMethod || STATE.trainingMethod) === 'image2splat' || uploadData.isImage;
             const methodTitle = (data.trainingMethod || STATE.trainingMethod) === 'triangle'
@@ -3171,27 +3152,6 @@ function pollJobUntilReady(jobId, uploadData, decisions) {
       }
     }, 1000);
     STATE.pollInterval = interval;
-  });
-}
-
-function updateSpaceRagPresets(videoId) {
-  const presetsContainer = document.getElementById('rag-presets');
-  if (!presetsContainer) return;
-
-  presetsContainer.innerHTML = `
-    <button class="chip-query" data-query="Describe the spatial dimensions and layout of this space">Space Layout</button>
-    <button class="chip-query" data-query="Explain why Nemotron chose ${nemotronMatcherBadge.textContent} matching for this video">Matching Rationale</button>
-    <button class="chip-query" data-query="Assess the 3D Gaussian density and lighting in the space center">Space Lighting & Center</button>
-  `;
-
-  presetsContainer.querySelectorAll('.chip-query').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      const query = chip.getAttribute('data-query');
-      if (query) {
-        ragInput.value = query;
-        submitRagQuery(query);
-      }
-    });
   });
 }
 
@@ -3770,17 +3730,6 @@ if (btnToggleAudio) {
     toggleAudioMute();
   });
 }
-
-// Preset chips click
-document.querySelectorAll('.chip-query').forEach((chip) => {
-  chip.addEventListener('click', () => {
-    const query = chip.getAttribute('data-query');
-    if (query) {
-      ragInput.value = query;
-      submitRagQuery(query);
-    }
-  });
-});
 
 if (ragForm) {
   ragForm.addEventListener('submit', (e) => {

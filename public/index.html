@@ -184,17 +184,8 @@
         <!-- Fast Re-processing Card (Quick Convert for Existing Video Scenes) -->
         <div id="reprocess-banner" class="reprocess-card hidden" style="display: none;">
           <div class="reprocess-card-header">
-            <div class="reprocess-badge-row">
-              <span class="reprocess-pill">⚡ Fast Pipeline Switch</span>
-              <span class="reprocess-cached-pill" id="reprocess-badge-pill">Quick Convert</span>
-            </div>
-            <span class="reprocess-timer-hint">&lt; 90s vs 5m</span>
+            <span class="reprocess-pill">⚡ Fast Pipeline Switch</span>
           </div>
-          <p class="reprocess-desc" id="reprocess-desc-text">
-            This scene (<strong id="reprocess-scene-name">Scene Video</strong>) is already processed. You can instantly
-            convert it to <strong id="reprocess-target-name">Triangle Splatting</strong> (WebXR Optimized) without
-            waiting for a new upload or initial processing.
-          </p>
           <div class="reprocess-actions-row">
             <button type="button" id="btn-reprocess-action" class="btn-reprocess-action">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
@@ -452,18 +443,6 @@
 
       <div class="panel-body">
 
-        <!-- Quick Query Presets -->
-        <div id="rag-presets" class="preset-chips">
-          <button class="chip-query" data-query="Explain the 3D Gaussian Splatting representation of this space">Space
-            Geometry</button>
-          <button class="chip-query"
-            data-query="What camera trajectory and COLMAP matcher were selected by Nemotron?">Reconstruction
-            Method</button>
-          <button class="chip-query"
-            data-query="Analyze the spatial density, lighting, and focal point of the space">Spatial Lighting & Focal
-            Point</button>
-        </div>
-
         <!-- Chat / Response Log -->
         <div id="rag-chat-log" class="rag-conversation">
           <div class="message system-msg">
@@ -677,7 +656,7 @@
     </div>
   </footer>
 
-  <script src="app.js?v=20261007_splat_glow_default_v33"></script>
+  <script src="app.js?v=20261007_clean_reprocess_card_v35"></script>
 </body>
 
 </html>

@@ -1333,5 +1333,20 @@ cloudflared tunnel --url http://localhost:3000
     - **Enforced Splat Glow by Default**:
       - Hardcoded double-sided rendering, depth testing, transparency, and `visible = true` across the splat hierarchy (`splatPivotGroup`, `dropInViewer`, `splatMesh`).
       - Hardcoded full screen-space splat scaling (`splatScale = 1.0`) on `splatMesh` immediately upon scene compilation.
-      - Stripped out all dynamic visibility/glow toggling state switches to prevent accidental state mismatches.
     - **Deployment**: Bumped frontend cache buster to `v=20261007_splat_glow_default_v33`.
+  - **Milestone 62: Strict Spatial RAG Guardrail for Scene Q&A ([services/ragService.js](file:///Users/akif/Projects/splatris/services/ragService.js))**:
+    - **System Prompt Guardrail**: Updated the system prompt and instructions for the Nemotron 3 Ultra LLM handling the "Ask anything about this space..." chat input:
+      - *"You are a spatial AI guide exclusively focused on the currently reconstructed 3D space. If the user asks a question that is unrelated to the active 3D model, its history, or its spatial context, you MUST politely decline and remind them to ask about the current scene. Never answer general knowledge, coding, or off-topic questions."*
+    - **Verification**: Verified via test API queries:
+      - Off-topic coding/general knowledge requests are politely rejected with a redirect to the active 3D scene.
+      - Relevant spatial, structural, and historical queries receive rich, grounded answers with 3D audio emitter positioning.
+  - **Milestone 63: Removal of Technical Chat Suggestion Chips ([public/index.html](file:///Users/akif/Projects/splatris/public/index.html), [public/app.js](file:///Users/akif/Projects/splatris/public/app.js))**:
+    - **UI Cleanup**: Completely removed the `#rag-presets` container and the three developer-centric suggestion chips ("Space Geometry", "Reconstruction Method", "Spatial Lighting & Focal Point").
+    - **Focused Chat Experience**: Cleaned up the Spatial Audio RAG panel so it consists exclusively of the "Spatial Audio Guide" conversation card and the "Ask anything about this space..." input field.
+    - **Code Cleanup**: Removed dead DOM references and `updateSpaceRagPresets` logic in `public/app.js`.
+    - **Deployment**: Bumped frontend cache buster to `v=20261007_clean_chat_v34`.
+  - **Milestone 64: Clean Up "Fast Pipeline Switch" Card ([public/index.html](file:///Users/akif/Projects/splatris/public/index.html), [public/style.css](file:///Users/akif/Projects/splatris/public/style.css), [public/app.js](file:///Users/akif/Projects/splatris/public/app.js))**:
+    - **Removed Clutter & Badges**: Completely removed the "Quick Convert" badge and the "< 90s vs 5m" badge from the card header.
+    - **Removed Explanatory Paragraph**: Deleted the redundant description text block explaining cached conversions.
+    - **Minimal Layout**: Kept the "⚡ FAST PIPELINE SWITCH" section header and placed the two action buttons ("Re-process as Triangle Splatting (Fast)" and "Upload New Video") directly underneath with clean, breathable spacing.
+    - **Deployment**: Bumped frontend cache buster to `v=20261007_clean_reprocess_card_v35`.
