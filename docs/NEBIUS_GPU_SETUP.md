@@ -203,4 +203,4 @@ In your local or hosted Splatris backend instance, configure the `.env` file:
 NEBIUS_GPU_ENDPOINT=http://<NEBIUS_VM_PUBLIC_IP>:8000
 ```
 
-When users upload videos or photos, Splatris will automatically stream frame archives to this Nebius L40S instance, train the 3D Gaussian Splat scene, and download the finished `.splat` model for instant WebXR viewing.
+When users upload walkthrough videos, Splatris will automatically stream frame archives to this Nebius L40S instance, train the 3D Gaussian Splat scene, and download the finished `.splat` model for instant WebXR viewing.
