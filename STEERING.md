@@ -1275,6 +1275,63 @@ cloudflared tunnel --url http://localhost:3000
     - In `loadGaussianSplatScene()`, added orientation check: single-image `image2splat` models have pinhole unprojected coordinates with `+Y` already as UP. Replaced Nerfstudio's -90° X rotation with identity quaternion `[0, 0, 0, 1]`, preventing the doorway object from lying flat on the floor and ensuring it stands upright.
     - Added pre-render `STATE.activeScene` assignment and 200ms settling delay in `pollJobUntilReady()`.
     - Bumped `public/index.html` cache buster to `v=20261006_photo_categorization_v22`.
-    - Re-launched server daemon with live changes applied.
-
-
+  - **Full-Height Object Preservation & Studio Background Isolation ([pipeline/infer_image2splat.py](file:///Users/akif/Projects/splatris/pipeline/infer_image2splat.py))**:
+    - Resolved issue where tall vertical objects (such as the Easter Island Moai statue) were severely truncated: previous radial distance weighting (`center_weight = 1.0 - 0.5 * dist_from_center`) heavily penalized pixels far from geometric center `(center_x, center_y)`, resulting in 92.6% of the top of the head being cut off.
+    - Implemented 4-corner uniform background detection: when borders/corners share consistent studio background colors (e.g., pure white `#ffffff` or neutral studio gray), color distance delta segmentation isolates 100% of the subject from head to base without vertical falloff.
+    - Added aspect-ratio-aware distance weighting fallback for in-the-wild photos (`dist_y` penalized only half as much as `dist_x`), preserving full vertical extent.
+    - Isolated depth normalization `d_min`/`d_max` to foreground pixels exclusively, maximizing 3D dynamic range and eliminating background depth artifacts.
+    - Corrected binary `.splat` rotation byte order to `(rw, rx, ry, rz)` matching `GaussianSplats3D` unpack layout.
+  - **Boundary Defringing, Surface Normal Alignment & Proportionate 3D Relief ([pipeline/infer_image2splat.py](file:///Users/akif/Projects/splatris/pipeline/infer_image2splat.py))**:
+    - Eliminated floating perforated halo/crown artifacts around object silhouettes: applied 2-iteration morphological erosion (`cv2.erode`) on the color-segmented foreground mask combined with connected component analysis, stripping all anti-aliased edge transition pixels that had background depth bleed.
+    - Reduced background bleed points from thousands down to 0.04% (209 splats).
+    - Replaced identity flat disc rotations with surface normal alignment: computed 3D spatial gradients ($\partial Z/\partial u$, $\partial Z/\partial v$) from smoothed depth maps, derived normal vectors $\mathbf{N}$, and computed rotation quaternions aligning each Gaussian ellipsoid to the local surface curvature.
+    - Updated Gaussian anisotropic scales to tangent-aligned footprints ($1.25\times$ pixel spacing for lateral coverage, $0.35\times$ for crisp surface shell thickness), eliminating side-profile steps and gaps.
+    - Scaled metric relief depth to a proportionate $0.65\text{m}$ extrusion ($Z \in [1.5\text{m}, 2.12\text{m}]$), preventing extreme cone/wedge stretching.
+    - Synced changes to GPU worker at `/home/ubuntu/Image2Splat/infer_image2splat.py` and validated on test Moai image (generated 472,945 dense Gaussians in 12.57s).
+    - Bumped `public/index.html` cache buster to `v=20261006_defringe_normals_v24`.
+  - **Milestone 53: Mandatory Rembg Isolation, Edge Gradient Cutoff & 360-Degree Volumetric Volume ([pipeline/infer_image2splat.py](file:///Users/akif/Projects/splatris/pipeline/infer_image2splat.py))**:
+    - **Worker Endpoint Migration**: Updated `.env` and restarted local backend server for new Nebius GPU instance at `http://89.169.109.161:8000`. Verified NVIDIA L40S GPU and CUDA 12.4.
+    - **Pre-processing Background Removal**: Integrated `rembg` (with CPU session fallback for onnxruntime) as the mandatory first step before depth estimation. 100% of white/studio or in-the-wild background pixels are assigned `alpha = 0` and completely omitted from 3D space, completely eliminating the background net/cage of splats.
+    - **Edge Stretching / Depth Cutoff Filter**: Implemented spatial depth gradient filtering ($\|\nabla Z\| = \sqrt{(\partial Z/\partial u)^2 + (\partial Z/\partial v)^2}$). Pruned pixels with extreme depth slopes exceeding the 98th percentile cutoff to eliminate backwards-stretching curtain artifacts at silhouette boundaries.
+    - **True 360-Degree Volumetric Solid Structure**: Upgraded unprojection from a 2.5D hollow mask to a fully enclosed 3D solid volume:
+      - Front shell: high-resolution photographic projection with surface normals.
+      - Back shell: smoothly meets front shell at boundary ($d\_norm \to 0$) and curves backwards with normal-aligned Gaussians ($\mathbf{N}_{back} = -\mathbf{N}_{front}$) and ambient-shaded texture.
+      - Core infill: interior solid core layer preventing hollow internal voids from top/down viewing angles.
+    - Verified on test Moai image: generated **721,023 360-degree Gaussians** with full volumetric depth ($1.2\text{m}$ depth, $1.75\text{m}$ width, $2.53\text{m}$ height).
+    - Bumped `public/index.html` cache buster to `v=20261007_rembg_volumetric_v25`.
+  - **Milestone 54: Proportionate Z-Axis Depth Scaling & Seamless Boundary Enclosure ([pipeline/infer_image2splat.py](file:///Users/akif/Projects/splatris/pipeline/infer_image2splat.py), [pipeline/gpu_worker_server.py](file:///Users/akif/Projects/splatris/pipeline/gpu_worker_server.py), [services/nebiusGpuService.js](file:///Users/akif/Projects/splatris/services/nebiusGpuService.js))**:
+    - **Depth Normalization & 3.0x Extrusion Multiplier**: Normalized foreground depth map strictly in range $[0.0, 1.0]$. Introduced `z_multiplier` (default `3.0x`, scaling `depth_scale` to $1.95\text{m}$ and `back_scale` to $1.65\text{m}$) so facial contours (nose tip, brow ridge, mouth, chin) protrude naturally along the Z-axis, completely eliminating the flattened pancake / crushed relief profile.
+    - **Distance Transform Boundary Enclosure**: Integrated `cv2.distanceTransform` to drive shell thickness from the outer silhouette perimeter inwards. At the silhouette perimeter ($bf \to 0$), thickness smoothly vanishes so the front shell and back shell meet seamlessly with zero gaps, zero holes, and zero edge curtaining.
+    - **Anatomical Volume Verification**: Validated on test Moai model: produced **881,251 Gaussians** with physical bounds $X = 2.40\text{m}, Y = 3.53\text{m}, Z = 2.24\text{m}$ and a balanced depth-to-width ratio of **0.93** (natural 3D head/sculpture proportions).
+    - **Worker Synchronization**: Deployed updated `infer_image2splat.py` and `gpu_worker_server.py` to GPU worker at `89.169.109.161:8000`, restarted `splatris-worker.service`, and bumped `public/index.html` cache buster to `v=20261007_depth_scaled_v26`.
+  - **Milestone 55: Depth Discontinuity Edge Filter & Natural Conservative Z-Relief ([pipeline/infer_image2splat.py](file:///Users/akif/Projects/splatris/pipeline/infer_image2splat.py), [pipeline/gpu_worker_server.py](file:///Users/akif/Projects/splatris/pipeline/gpu_worker_server.py))**:
+    - **Depth Discontinuity Filter**: Implemented 4-connected immediate neighbor depth delta calculation ($\Delta(u, v) = \max(|D(u\pm 1, v) - D(u, v)|, |D(u, v\pm 1) - D(u, v)|)$). Discards any pixel bridging large depth jumps exceeding `edge_thresh` (default `0.020`), completely deleting rubber-sheet bridges, stretched occluding borders, and dragging lines.
+    - **Conservative Z-Axis Scale**: Reduced base depth extrusion to a natural $0.35\text{m}$ (`z_multiplier = 1.0`), ensuring the depth delta from nose tip to the side of the head is only a few units (~10-15 cm) without pointed cone distortion. Gentle 10 cm back closure seamlessly finishes the rear without wedge artifacts.
+    - **Depth-Tied Splat Footprint Scaling**: Tied Gaussian radius directly to depth footprint ($(Z / f_x) \times \text{coverage\_factor}$), ensuring splats pushed further back in Z physically scale up proportionally in 3D space to maintain solid, gap-free coverage without sparse strings of dots.
+    - **Verified Bounds**: Validated on Moai image: produced **727,215 clean Gaussians** with balanced bounds $X = 1.37\text{m}, Y = 1.90\text{m}, Z = 0.41\text{m}$.
+    - **Deployment**: Synced to GPU worker at `89.169.109.161:8000`, restarted `splatris-worker.service`, and bumped frontend cache buster to `v=20261007_clean_depth_v27`.
+  - **Milestone 56: Aspect Ratio Letterbox Padding & Full-Image Mask Preservation ([pipeline/infer_image2splat.py](file:///Users/akif/Projects/splatris/pipeline/infer_image2splat.py))**:
+    - **Full Uncropped Subject Background Removal**: Executed `rembg` on the uncropped native resolution image first, guaranteeing foreground isolation across the entire vertical span without cropping or morphological erosion severing the subject.
+    - **Letterbox Square Padding**: Scaled longest edge to fit target 1024 resolution while preserving the exact input aspect ratio. Symmetrically padded the shorter edge with neutral black and 100% transparent alpha (`value=0`), creating a perfect square without discarding the lower torso or body.
+    - **Verified Anatomical Extent**: Tested on GPU worker (`89.169.109.161`): generated **736,274 Gaussians** spanning $1.85\text{m}$ vertically ($Y \in [0.50\text{m}, 2.35\text{m}]$), $1.33\text{m}$ horizontally, and $0.41\text{m}$ in depth, successfully retaining the entire statue (head + neck + body).
+    - **Production Synchronization**: Synchronized to GPU worker, verified `splatris-worker.service` healthy, and bumped frontend cache buster to `v=20261007_letterbox_v28`.
+  - **Milestone 59: Pixel-Perfect RGB-Depth Alignment, [v, u] Unprojection & Upright Quaternions ([pipeline/infer_image2splat.py](file:///Users/akif/Projects/splatris/pipeline/infer_image2splat.py))**:
+    - **Strict Shape Alignment Safeguard**: Added `assert im_rgb.shape[:2] == depth_map.shape[:2]` with fallback cubic resize, guaranteeing zero dimension or orientation divergence between color and depth.
+    - **Pixel Sampling Rule**: Explicitly parameterized unprojection indices as `v = y_idx * stride` (row / Y-axis) and `u = x_idx * stride` (column / X-axis), indexing strictly as `depth = depth_map[v, u]` and `color = im_rgb[v, u]`.
+    - **Upright Camera-Facing Quaternions**: Replaced derivative normal tilt with stable identity camera-facing quaternions `[qw=1.0, qx=0, qy=0, qz=0]` with isotropic disk scales `[s, s, s*0.45]`. Splats are guaranteed upright, preventing any rotational tilting, sideways lying, or melted blob distortion.
+    - **Production Sync**: Deployed to GPU worker at `89.169.109.161:8000`, verified `splatris-worker.service` healthy, and updated cache buster to `v=20261007_aligned_uv_v31`.
+  - **Milestone 60: Clean Reversion to Multi-View Video 3DGS (Deprecating Single-Image Instant Object)**:
+    - **Architectural Decision**: Formally dropped the single-photo Instant Object (Image2Splat) experiment in favor of authentic multi-view photogrammetric 3D Gaussian Splatting (Nerfstudio Splatfacto + COLMAP SfM / Instant-NGP / NeRF).
+    - **Frontend Guardrails**:
+      - Restored strict video-only dropzone accepting MP4/MOV walkthrough videos (30–60s, up to 1GB).
+      - Automatically blocks single image uploads with explicit guidance to supply a walkthrough video for true 360-degree parallax spatial reconstruction.
+      - Streamlined pipeline mode selector to Standard 3DGS and Triangle Splatting, removing the Instant Object method button.
+      - Removed obsolete instant-object Vision RAG panels and streamlined Recent Spaces to show verified multi-view video reconstructions.
+  - **Milestone 61: Default Splat Glow Enforcement & Removal of Toggle Button ([public/index.html](file:///Users/akif/Projects/splatris/public/index.html), [public/app.js](file:///Users/akif/Projects/splatris/public/app.js))**:
+    - **UX Decision**: Established permanent Splat Glow rendering as the signature visual aesthetic for all 3DGS reconstructions without requiring user toggling.
+    - **Removed Toggle UI**: Completely removed the "Splat Glow" toggle button (`#btn-toggle-points`) from the "VIEWPORT MODES" control panel in `public/index.html`. Removed the button reference and click listener from `public/app.js` which previously toggled viewer visibility and caused the mesh to disappear.
+    - **Enforced Splat Glow by Default**:
+      - Hardcoded double-sided rendering, depth testing, transparency, and `visible = true` across the splat hierarchy (`splatPivotGroup`, `dropInViewer`, `splatMesh`).
+      - Hardcoded full screen-space splat scaling (`splatScale = 1.0`) on `splatMesh` immediately upon scene compilation.
+      - Stripped out all dynamic visibility/glow toggling state switches to prevent accidental state mismatches.
+    - **Deployment**: Bumped frontend cache buster to `v=20261007_splat_glow_default_v33`.

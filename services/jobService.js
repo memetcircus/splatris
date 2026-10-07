@@ -52,7 +52,7 @@ export function createJob({
   sceneId = null,
 }) {
   const jobId = crypto.randomUUID();
-  const method = ['triangle', 'image2splat'].includes(trainingMethod) ? trainingMethod : '3dgs';
+  const method = trainingMethod === 'triangle' ? 'triangle' : '3dgs';
   const outputExt = 'splat'; // GaussianSplats3D viewer natively renders .splat; Mesh .ply is preserved as companion asset
   const outputModelUrl = `/uploads/models/${jobId}.${outputExt}`;
 
@@ -70,24 +70,21 @@ export function createJob({
     return { ...existingJob, isExisting: true };
   }
 
-    const isImageMethod = method === 'image2splat' || /\.(jpe?g|png|webp)$/i.test(originalFilename || '') || (deviceName && (deviceName.includes('Single Image') || deviceName.includes('Instant Object')));
-    const effectiveMethod = isImageMethod ? 'image2splat' : method;
-
-    const job = {
-      jobId,
-      videoId: videoId || 'room-scan',
-      sceneId: effectiveSceneId,
-      cachedSceneId: effectiveCachedId,
-      bypassColmap: isBypass,
-      originalFilename: originalFilename || (videoId ? `${videoId}.${isImageMethod ? 'jpg' : 'mp4'}` : (isImageMethod ? 'photo.jpg' : 'Walkthrough.mp4')),
-      deviceName: deviceName || (isImageMethod ? 'Instant Object (Single Image)' : 'Mobile Camera'),
-      uploadTimestamp: uploadTimestamp || new Date().toISOString(),
-      colmapMatcher,
-      recommendedIterations: clampedIterations,
-      filteredFrameIndices,
-      trainingMethod: effectiveMethod,
-      isImage: isImageMethod,
-      status: 'processing', // 'processing' | 'completed' | 'failed' | 'aborted'
+  const job = {
+    jobId,
+    videoId: videoId || 'room-scan',
+    sceneId: effectiveSceneId,
+    cachedSceneId: effectiveCachedId,
+    bypassColmap: isBypass,
+    originalFilename: originalFilename || (videoId ? `${videoId}.mp4` : 'Walkthrough.mp4'),
+    deviceName: deviceName || 'Mobile Camera',
+    uploadTimestamp: uploadTimestamp || new Date().toISOString(),
+    colmapMatcher,
+    recommendedIterations: clampedIterations,
+    filteredFrameIndices,
+    trainingMethod: method,
+    isImage: false,
+    status: 'processing', // 'processing' | 'completed' | 'failed' | 'aborted'
       stage: isBypass
         ? '⚡ COLMAP Cache Hit! Skipping upload & feature extraction...'
         : 'Submitting job to Nebius GPU pipeline',
@@ -422,11 +419,14 @@ export async function getRecentCategorizedModels(limit = 3) {
         /\.(jpe?g|png|webp)$/i.test(meta.originalFilename || '') ||
         (memoryJob && (memoryJob.trainingMethod === 'image2splat' || memoryJob.isImage === true || /\.(jpe?g|png|webp)$/i.test(memoryJob.originalFilename || '')));
 
-      const isVideo = !isImage;
-      const trainingMethod = isImage ? 'image2splat' : (meta.trainingMethod || (isPly ? 'triangle' : '3dgs'));
+      // Completely filter out single image photo models (Image2Splat removed)
+      if (isImage) continue;
 
-      const originalFilename = meta.originalFilename || memoryJob?.originalFilename || (baseName === 'scene' ? 'tank_internet.mp4' : (isImage ? 'photo.jpg' : 'Walkthrough.mp4'));
-      const deviceName = meta.deviceName || memoryJob?.deviceName || (isImage ? 'Instant Object (Single Image)' : 'Mobile Camera');
+      const isVideo = true;
+      const trainingMethod = meta.trainingMethod || (isPly ? 'triangle' : '3dgs');
+
+      const originalFilename = meta.originalFilename || memoryJob?.originalFilename || (baseName === 'scene' ? 'tank_internet.mp4' : 'Walkthrough.mp4');
+      const deviceName = meta.deviceName || memoryJob?.deviceName || 'Mobile Camera';
       const timestamp = meta.uploadTimestamp || memoryJob?.uploadTimestamp || stat.mtime.toISOString();
       const dateStr = formatDateTimeShort(timestamp);
 
@@ -516,7 +516,7 @@ export async function getRecentCategorizedModels(limit = 3) {
     });
 
     let videoModels = uniqueModels.filter((m) => !m.isImage);
-    const imageModels = uniqueModels.filter((m) => m.isImage).slice(0, limit);
+    const imageModels = [];
 
     // Guaranteed Triangle Mesh preservation:
     // Ensure the triangle mesh model (format: 'ply' or trainingMethod: 'triangle') is ALWAYS present in videoModels
@@ -533,8 +533,8 @@ export async function getRecentCategorizedModels(limit = 3) {
 
     return {
       videoModels,
-      imageModels,
-      models: uniqueModels.slice(0, limit * 2),
+      imageModels: [],
+      models: videoModels,
     };
   } catch (err) {
     console.error('[JobService] Error retrieving categorized models:', err);

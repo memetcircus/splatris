@@ -79,49 +79,26 @@ def run_training_task(job_id: str, images_dir: Path, output_dir: Path, matcher: 
     log_file_path = job_dir / "train.log"
 
     try:
-        if training_method == "image2splat":
-            # Bypass COLMAP SfM entirely since this method operates on a single image
-            all_imgs = sorted([f for f in images_dir.iterdir() if f.suffix.lower() in ('.jpg', '.jpeg', '.png')])
-            if not all_imgs:
-                job["status"] = "failed"
-                job["error"] = f"No input image found in {images_dir} for Image2Splat reconstruction"
-                return
+        cmd = [
+            sys.executable, str(script_path),
+            "--images_dir", str(images_dir),
+            "--output_dir", str(output_dir),
+            "--training_method", training_method,
+            "--matcher", matcher,
+            "--iterations", str(effective_iterations),
+            "--densify_grad_thresh", str(densify_grad_thresh),
+            "--downscale_factor", str(downscale_factor),
+            "--num_downscales", "2",
+            "--output_splat", "scene.splat",
+            "--output_ply", "scene.ply"
+        ]
 
-            input_image = all_imgs[0]
-            script_path = Path("/home/ubuntu/Image2Splat/infer_image2splat.py")
-            if not script_path.exists():
-                script_path = Path(__file__).parent / "infer_image2splat.py"
-
-            isolated_python = Path("/home/ubuntu/image2splat_env/bin/python3")
-            python_bin = str(isolated_python if isolated_python.exists() else sys.executable)
-
-            cmd = [
-                python_bin, str(script_path),
-                "--image", str(input_image),
-                "--output_dir", str(output_dir)
-            ]
-            job["stage"] = "Running Image2Splat Instant Inference"
-        else:
-            cmd = [
-                sys.executable, str(script_path),
-                "--images_dir", str(images_dir),
-                "--output_dir", str(output_dir),
-                "--training_method", training_method,
-                "--matcher", matcher,
-                "--iterations", str(effective_iterations),
-                "--densify_grad_thresh", str(densify_grad_thresh),
-                "--downscale_factor", str(downscale_factor),
-                "--num_downscales", "2",
-                "--output_splat", "scene.splat",
-                "--output_ply", "scene.ply"
-            ]
-
-            if scene_id:
-                cmd.extend(["--scene_id", str(scene_id)])
-            if cached_scene_id:
-                cmd.extend(["--cached_scene_id", str(cached_scene_id)])
-            if frame_indices:
-                cmd.extend(["--frame_indices", frame_indices])
+        if scene_id:
+            cmd.extend(["--scene_id", str(scene_id)])
+        if cached_scene_id:
+            cmd.extend(["--cached_scene_id", str(cached_scene_id)])
+        if frame_indices:
+            cmd.extend(["--frame_indices", frame_indices])
 
         # Inject complete environment for CUDA + fakecuda + venv
         worker_env = os.environ.copy()
@@ -229,7 +206,7 @@ async def start_training(
     filteredFrameIndices: str = Form(""),
     densify_grad_thresh: float = Form(0.0004),
     downscale_factor: int = Form(2),
-    training_method: str = Form("3dgs")
+    training_method: str = Form("3dgs"),
 ):
     job_id = jobId or str(uuid.uuid4())
     effective_scene_id = sceneId or cachedSceneId or job_id

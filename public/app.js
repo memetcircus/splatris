@@ -1060,25 +1060,13 @@ async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
     }
   }
 
-  let isImage = STATE.trainingMethod === 'image2splat' || STATE.activeScene?.trainingMethod === 'image2splat' || STATE.activeScene?.isImage === true;
-  if (!isImage && url) {
-    const modelId = url.split('/').pop().replace(/\.(splat|ply)$/, '');
-    const found = STATE.recentModels?.find((m) => m.name === modelId || m.jobId === modelId || (m.filename && url.includes(m.filename)));
-    if (found?.isImage || found?.trainingMethod === 'image2splat' || /\.(jpe?g|png|webp)$/i.test(found?.originalFilename || '')) {
-      isImage = true;
-    }
-  }
-
-  // Single-Image (Image2Splat): ray unprojection already sets +Y as up and -Z as forward -> needs identity [0, 0, 0, 1] to remain upright!
   // Triangle Splatting (raw COLMAP): ground plane is in X-Z and -Y is UP -> needs 180 deg X flip [1, 0, 0, 0] to align upright in Three.js
   // Nerfstudio (3DGS): uses Z-up coordinates -> needs -90 deg X rotation (quaternion [-0.7071068, 0, 0, 0.7071068])
-  const sceneRotation = isImage
-    ? [0, 0, 0, 1]
-    : (isTriangle
-      ? [1, 0, 0, 0]
-      : [-0.7071068, 0, 0, 0.7071068]);
+  const sceneRotation = isTriangle
+    ? [1, 0, 0, 0]
+    : [-0.7071068, 0, 0, 0.7071068];
 
-  console.log(`[Splatris] Loading splat scene via DropInViewer.addSplatScene('${url}', format=${format}, method=${isImage ? 'image2splat' : (isTriangle ? 'triangle' : '3dgs')})...`);
+  console.log(`[Splatris] Loading splat scene via DropInViewer.addSplatScene('${url}', format=${format}, method=${isTriangle ? 'triangle' : '3dgs'})...`);
 
   try {
     await dropInViewer.addSplatScene(url, {
@@ -1159,22 +1147,17 @@ async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
         const centerZ = (p(zs, 0.05) + p(zs, 0.95)) / 2;
 
         let isObjectScan =
-          STATE.trainingMethod === 'image2splat' ||
           STATE.trainingMethod === 'triangle' ||
-          url.toLowerCase().includes('image2splat') ||
           url.toLowerCase().includes('tank') ||
           (STATE.activeScene?.trainingMethod === 'triangle') ||
-          (STATE.activeScene?.trainingMethod === 'image2splat') ||
           (STATE.activeScene?.originalFilename && STATE.activeScene.originalFilename.toLowerCase().includes('tank'));
 
         if (!isObjectScan && STATE.recentModels) {
           const match = STATE.recentModels.find(m => url.includes(m.filename) || (m.name && url.includes(m.name)));
           if (match) {
-            if (match.trainingMethod === 'triangle' || match.trainingMethod === 'image2splat') {
+            if (match.trainingMethod === 'triangle') {
               isObjectScan = true;
             } else if (match.originalFilename && match.originalFilename.toLowerCase().includes('tank')) {
-              isObjectScan = true;
-            } else if (match.deviceName && match.deviceName.includes('Instant Object')) {
               isObjectScan = true;
             }
           }
@@ -1201,7 +1184,8 @@ async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
 
     if (STATE.isObjectScan) {
       STATE.splatPivotGroup.position.set(0, targetCenterY, 0);
-      dropInViewer.position.set(translateX, -targetCenterY + translateY, translateZ);
+      // Center the object vertically on the pivot point (so base is at 1.0 - roomHeight/2 and top is at 1.0 + roomHeight/2)
+      dropInViewer.position.set(translateX, -(roomHeight * 0.5) + translateY, translateZ);
     } else {
       STATE.splatPivotGroup.position.set(0, 0, 0);
       dropInViewer.position.set(translateX, translateY, translateZ);
@@ -1209,28 +1193,36 @@ async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
 
     dropInViewer.scale.set(autoScale, autoScale, autoScale);
 
-    // Ensure all splat meshes and internal geometry are rendered double-sided and never backface-culled
-    const ensureDoubleSidedAndNoCulling = (obj) => {
+    // Enforce Splat Glow properties and ensure double-sided visibility by default
+    const enforceSplatGlowAndVisibility = (obj) => {
       if (!obj) return;
+      obj.visible = true;
       obj.frustumCulled = false;
       if (obj.material) {
         obj.material.side = THREE.DoubleSide;
         obj.material.depthTest = true;
         obj.material.depthWrite = false;
+        obj.material.transparent = true;
         obj.material.needsUpdate = true;
       }
       if (obj.children) {
-        obj.children.forEach(ensureDoubleSidedAndNoCulling);
+        obj.children.forEach(enforceSplatGlowAndVisibility);
       }
     };
-    ensureDoubleSidedAndNoCulling(STATE.splatPivotGroup);
-    ensureDoubleSidedAndNoCulling(dropInViewer);
+    enforceSplatGlowAndVisibility(STATE.splatPivotGroup);
+    enforceSplatGlowAndVisibility(dropInViewer);
     if (dropInViewer.splatMesh) {
-      ensureDoubleSidedAndNoCulling(dropInViewer.splatMesh);
+      dropInViewer.splatMesh.visible = true;
+      enforceSplatGlowAndVisibility(dropInViewer.splatMesh);
       setupStereoscopicPerEyeRendering(dropInViewer.splatMesh);
+      if (dropInViewer.splatMesh.setSplatScale) {
+        dropInViewer.splatMesh.setSplatScale(1.0);
+      } else if (dropInViewer.splatMesh.material?.uniforms?.splatScale) {
+        dropInViewer.splatMesh.material.uniforms.splatScale.value = 1.0;
+      }
     }
     if (dropInViewer.callbackMesh) {
-      ensureDoubleSidedAndNoCulling(dropInViewer.callbackMesh);
+      enforceSplatGlowAndVisibility(dropInViewer.callbackMesh);
     }
 
     STATE.splatPivotGroup.frustumCulled = false;
@@ -1260,7 +1252,7 @@ async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
     camera.up.set(0, 1, 0);
     if (STATE.isObjectScan) {
       const viewDist = Math.max(1.8, Math.min(2.8, (roomHeight || 1.0) * 1.8));
-      camera.position.set(0, targetCenterY + 0.35, viewDist);
+      camera.position.set(0, targetCenterY + 0.05, viewDist);
       updateCameraTargets(0, targetCenterY, 0);
       controls.minDistance = 0.1;
       controls.maxDistance = 25.0;
@@ -1905,14 +1897,10 @@ if (btnCancelUpload) {
   });
 }
 
-// --- Training Method Segmented Control (Standard 3DGS vs Triangle Splatting vs Instant Object) ---
+// --- Training Method Segmented Control (Standard 3DGS vs Triangle Splatting) ---
 const btnMethod3dgs = document.getElementById('btn-method-3dgs');
 const btnMethodTriangle = document.getElementById('btn-method-triangle');
-const btnMethodImage2splat = document.getElementById('btn-method-image2splat');
 const methodSelectedBadge = document.getElementById('method-selected-badge');
-const instantObjectFallbackCard = document.getElementById('instant-object-fallback-card');
-const inputManualObjectName = document.getElementById('input-manual-object-name');
-const btnConfirmObjectName = document.getElementById('btn-confirm-object-name');
 
 // --- Feature Update: Pipeline Caching & Fast Re-Processing UI Controls ---
 const reprocessBanner = document.getElementById('reprocess-banner');
@@ -1968,60 +1956,11 @@ function updateButtonsForActiveJob(isActive) {
 
 function updatePipelineUIForActiveScene() {
   const active = STATE.activeScene;
-
-  // Robust detection of whether active scene is a single photo (Image2Splat / Instant Object)
-  const isImageScene = Boolean(
-    active?.isImage ||
-    active?.trainingMethod === 'image2splat' ||
-    (active?.deviceName && active.deviceName.toLowerCase().includes('instant object')) ||
-    (active?.deviceName && active.deviceName.toLowerCase().includes('single image')) ||
-    (active?.originalFilename && /\.(jpe?g|png|webp)$/i.test(active.originalFilename)) ||
-    (STATE.activeModelUrl && STATE.activeModelUrl.toLowerCase().includes('image2splat'))
-  );
-
   const btn3dgs = document.getElementById('btn-method-3dgs');
   const btnTriangle = document.getElementById('btn-method-triangle');
-  const btnImage = document.getElementById('btn-method-image2splat');
   const videoDropzone = document.getElementById('video-dropzone');
 
-  if (isImageScene) {
-    // 1. VISIBILITY STATE RESET:
-    // When the user selects a single photo (Image2Splat) from Recent Scenes,
-    // the UI must completely hide (display: none) the #reprocess-banner.
-    // This banner must ONLY be visible when the active scene is a Video-based model.
-    if (reprocessBanner) {
-      reprocessBanner.classList.add('hidden');
-      reprocessBanner.style.setProperty('display', 'none', 'important');
-    }
-
-    // 2. IMAGE ISOLATION:
-    // If the active scene was generated from a single photo (Instant Object / Image2Splat),
-    // disable or gray-out the "Standard 3DGS" and "Triangle Splatting" radio buttons entirely.
-    if (btn3dgs) {
-      btn3dgs.classList.add('method-disabled');
-      btn3dgs.setAttribute('disabled', 'true');
-      btn3dgs.setAttribute('title', 'Single images cannot be processed into video-based pipelines. Image2Splat is isolated.');
-    }
-    if (btnTriangle) {
-      btnTriangle.classList.add('method-disabled');
-      btnTriangle.setAttribute('disabled', 'true');
-      btnTriangle.setAttribute('title', 'Single images cannot be processed into video-based pipelines. Image2Splat is isolated.');
-    }
-
-    // Force active radio selection to image2splat
-    if (STATE.trainingMethod !== 'image2splat') {
-      setTrainingMethod('image2splat', false);
-    }
-
-    if (videoDropzone) {
-      videoDropzone.classList.remove('hidden');
-      videoDropzone.style.display = '';
-    }
-    return;
-  }
-
-  // VIDEO SCENE:
-  // Enable 3dgs and triangle buttons
+  // Video Pipeline Buttons:
   if (btn3dgs) {
     btn3dgs.classList.remove('method-disabled');
     btn3dgs.removeAttribute('disabled');
@@ -2270,7 +2209,7 @@ if (btnAbortSuspended) {
 }
 
 function setTrainingMethod(method, triggerUpdate = true) {
-  if (['3dgs', 'triangle', 'image2splat'].includes(method)) {
+  if (['3dgs', 'triangle'].includes(method)) {
     STATE.trainingMethod = method;
   } else {
     STATE.trainingMethod = '3dgs';
@@ -2278,7 +2217,6 @@ function setTrainingMethod(method, triggerUpdate = true) {
 
   const is3dgs = STATE.trainingMethod === '3dgs';
   const isTriangle = STATE.trainingMethod === 'triangle';
-  const isImage2splat = STATE.trainingMethod === 'image2splat';
 
   if (btnMethod3dgs) {
     btnMethod3dgs.classList.toggle('active', is3dgs);
@@ -2288,53 +2226,38 @@ function setTrainingMethod(method, triggerUpdate = true) {
     btnMethodTriangle.classList.toggle('active', isTriangle);
     btnMethodTriangle.setAttribute('aria-checked', isTriangle.toString());
   }
-  if (btnMethodImage2splat) {
-    btnMethodImage2splat.classList.toggle('active', isImage2splat);
-    btnMethodImage2splat.setAttribute('aria-checked', isImage2splat.toString());
-  }
 
   if (methodSelectedBadge) {
-    if (isImage2splat) {
-      methodSelectedBadge.textContent = 'Instant Object (Image2Splat)';
-    } else if (isTriangle) {
-      methodSelectedBadge.textContent = 'Triangle Splatting';
-    } else {
-      methodSelectedBadge.textContent = 'Standard 3DGS';
-    }
+    methodSelectedBadge.textContent = isTriangle ? 'Triangle Splatting' : 'Standard 3DGS';
   }
 
-  // The universal dropzone accepts BOTH video and image files regardless of active mode
+  // The dropzone accepts video files
   const fileInput = document.getElementById('video-file-input');
   const dTitle = document.getElementById('dropzone-title');
   const dSubtitle = document.getElementById('dropzone-subtitle');
 
   if (fileInput) {
-    fileInput.accept = 'video/mp4,video/quicktime,image/jpeg,image/png';
+    fileInput.accept = 'video/mp4,video/quicktime';
   }
 
   if (dTitle && dSubtitle) {
-    if (isImage2splat) {
-      dTitle.textContent = 'Drop single object photo (JPG or PNG)';
-      dSubtitle.textContent = 'Instant 3D Gaussian Splatting via Image2Splat • Or drop a video for room scale';
-    } else if (isTriangle) {
+    if (isTriangle) {
       dTitle.textContent = 'Drop space walkthrough video (30–60s, MP4/MOV)';
-      dSubtitle.textContent = 'Mesh-based Triangle Splatting • Or drop a photo for Instant Object';
+      dSubtitle.textContent = 'Mesh-based Triangle Splatting • Differentiable rasterization for WebXR (max 1GB)';
     } else {
-      dTitle.textContent = 'Drop a walkthrough video or single object photo';
-      dSubtitle.textContent = 'Supports MP4/MOV walkthroughs (max 1GB) or JPG/PNG photos for Instant 3D scan';
+      dTitle.textContent = 'Drop space walkthrough video (30–60s, MP4/MOV)';
+      dSubtitle.textContent = 'Standard 3D Gaussian Splatting • Nerfstudio Splatfacto (max 1GB)';
     }
   }
 
   // Update pipeline step labels
   const step2Text = document.querySelector('#step-2 span:last-child');
   const step4Text = document.querySelector('#step-4 span:last-child');
-  if (step2Text) step2Text.textContent = isImage2splat ? '2. Depth Lift' : '2. Extract';
-  if (step4Text) step4Text.textContent = isImage2splat ? '4. Image2Splat' : (isTriangle ? '4. Mesh Train' : '4. 3DGS Train');
+  if (step2Text) step2Text.textContent = '2. Extract';
+  if (step4Text) step4Text.textContent = isTriangle ? '4. Mesh Train' : '4. 3DGS Train';
 
   if (btnAuditProceedLabel) {
-    btnAuditProceedLabel.textContent = isImage2splat
-      ? 'Proceed to Instant 3DGS'
-      : (isTriangle ? 'Proceed to Triangle Training' : 'Proceed to 3DGS Training');
+    btnAuditProceedLabel.textContent = isTriangle ? 'Proceed to Triangle Training' : 'Proceed to 3DGS Training';
   }
 
   console.log(`[Splatris] Training pipeline method set to: ${STATE.trainingMethod}`);
@@ -2347,10 +2270,6 @@ function setTrainingMethod(method, triggerUpdate = true) {
 if (btnMethod3dgs) {
   btnMethod3dgs.addEventListener('click', (e) => {
     e.preventDefault();
-    if (btnMethod3dgs.classList.contains('method-disabled')) {
-      showToast('Single image scenes cannot be processed into video-based pipelines. Image2Splat is isolated.', 'warning', 4000);
-      return;
-    }
     STATE.userWantsNewUpload = false;
     setTrainingMethod('3dgs');
   });
@@ -2358,19 +2277,8 @@ if (btnMethod3dgs) {
 if (btnMethodTriangle) {
   btnMethodTriangle.addEventListener('click', (e) => {
     e.preventDefault();
-    if (btnMethodTriangle.classList.contains('method-disabled')) {
-      showToast('Single image scenes cannot be processed into video-based pipelines. Image2Splat is isolated.', 'warning', 4000);
-      return;
-    }
     STATE.userWantsNewUpload = false;
     setTrainingMethod('triangle');
-  });
-}
-if (btnMethodImage2splat) {
-  btnMethodImage2splat.addEventListener('click', (e) => {
-    e.preventDefault();
-    STATE.userWantsNewUpload = false;
-    setTrainingMethod('image2splat');
   });
 }
 
@@ -2896,146 +2804,6 @@ async function abortCurrentPipeline() {
   });
 }
 
-// --- Autonomous Vision RAG Integration (Nemotron Vision + Tavily) ---
-async function runAutonomousVisionRAG(videoId) {
-  try {
-    console.log('[VisionRAG] Triggering Nemotron Vision object identification for videoId:', videoId);
-    if (instantObjectFallbackCard) instantObjectFallbackCard.classList.add('hidden');
-
-    const res = await safeFetchJson('/api/spatial/instant-object/identify', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoId }),
-    });
-
-    if (res.isConfident && res.objectName) {
-      showToast(`AI Identified: "${res.objectName}" (${Math.round((res.confidence || 0.9) * 100)}% match)`, 'success', 5000);
-      if (res.tavilyData) {
-        streamTavilyDataToRagPanel(res.objectName, res.tavilyData);
-      }
-    } else {
-      // Vision model was not confident or failed
-      // Fallback: pause Tavily search and prompt user with text input field
-      console.warn('[VisionRAG] Vision model paused. Prompting user for object identification:', res);
-      displayFallbackObjectInput(videoId, res.suggestedName);
-    }
-  } catch (err) {
-    console.warn('[VisionRAG] Vision RAG error:', err.message);
-    displayFallbackObjectInput(videoId, '');
-  }
-}
-
-function displayFallbackObjectInput(videoId, suggestedName) {
-  if (!instantObjectFallbackCard) return;
-  instantObjectFallbackCard.classList.remove('hidden');
-  if (inputManualObjectName) {
-    inputManualObjectName.value = suggestedName || '';
-    inputManualObjectName.focus();
-  }
-
-  const handleConfirm = async () => {
-    const objectName = inputManualObjectName?.value?.trim();
-    if (!objectName) {
-      showToast('Please enter an object name or description.', 'warning', 3000);
-      return;
-    }
-    instantObjectFallbackCard.classList.add('hidden');
-    showToast(`Searching Tavily for "${objectName}"...`, 'info', 4000);
-
-    try {
-      const tavilyRes = await safeFetchJson('/api/spatial/instant-object/tavily-enrich', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ objectName, videoId }),
-      });
-      if (tavilyRes.success && tavilyRes.tavilyData) {
-        showToast(`Tavily knowledge fetched for "${objectName}"!`, 'success', 4000);
-        streamTavilyDataToRagPanel(objectName, tavilyRes.tavilyData);
-      }
-    } catch (err) {
-      console.error('[VisionRAG] Fallback Tavily enrichment error:', err);
-      showToast(`Could not fetch details for ${objectName}: ${err.message}`, 'error', 4000);
-    }
-  };
-
-  if (btnConfirmObjectName) {
-    btnConfirmObjectName.onclick = handleConfirm;
-  }
-  if (inputManualObjectName) {
-    inputManualObjectName.onkeydown = (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleConfirm();
-      }
-    };
-  }
-}
-
-function streamTavilyDataToRagPanel(objectName, tavilyData) {
-  const ragLog = document.getElementById('rag-chat-log');
-  if (!ragLog) return;
-
-  const msgDiv = document.createElement('div');
-  msgDiv.className = 'message ai-msg';
-
-  let sourcesHtml = '';
-  if (tavilyData.results && tavilyData.results.length > 0) {
-    sourcesHtml = `
-      <div class="rag-sources" style="margin-top: 8px; font-size: 11px; opacity: 0.85;">
-        <strong>Verified Grounding Sources:</strong>
-        <ul style="margin: 4px 0 0 16px; padding: 0;">
-          ${tavilyData.results.slice(0, 3).map(r => `<li><a href="${escapeHtml(r.url)}" target="_blank" style="color: var(--accent-cyan, #06b6d4); text-decoration: underline;">${escapeHtml(r.title || r.url)}</a></li>`).join('')}
-        </ul>
-      </div>
-    `;
-  }
-
-  msgDiv.innerHTML = `
-    <div class="msg-header">
-      <span class="agent-avatar" style="background: linear-gradient(135deg, #f59e0b, #ec4899);">AI</span>
-      <span class="agent-name">Autonomous Spatial Guide • Instant Object Scan</span>
-      <span class="badge ai" style="background: rgba(245, 158, 11, 0.25); color: #fbbf24;">Tavily + Nemotron</span>
-    </div>
-    <div class="msg-content">
-      <div style="font-weight: 600; font-size: 14px; margin-bottom: 6px; color: #38bdf8;">
-        Identified 3D Object: ${escapeHtml(objectName)}
-      </div>
-      <p style="margin: 0; line-height: 1.5;">${escapeHtml(tavilyData.summary || '')}</p>
-      ${sourcesHtml}
-    </div>
-  `;
-
-  ragLog.appendChild(msgDiv);
-  ragLog.scrollTop = ragLog.scrollHeight;
-
-  // Speak concise summary through Web Audio
-  if (tavilyData.summary) {
-    const speakText = tavilyData.summary.split('.').slice(0, 2).join('.') + '.';
-    speakSpatialAudio(speakText, { x: 0, y: 1.2, z: -1.5 });
-  }
-
-  // Dynamically update RAG preset chips for this object
-  const ragPresets = document.getElementById('rag-presets');
-  if (ragPresets && tavilyData.suggestedQuestions && tavilyData.suggestedQuestions.length > 0) {
-    ragPresets.innerHTML = '';
-    tavilyData.suggestedQuestions.forEach(q => {
-      const chip = document.createElement('button');
-      chip.className = 'chip-query';
-      chip.textContent = q.length > 38 ? q.slice(0, 35) + '...' : q;
-      chip.title = q;
-      chip.dataset.query = q;
-      chip.addEventListener('click', (e) => {
-        e.preventDefault();
-        const ragInput = document.getElementById('rag-input');
-        if (ragInput) {
-          ragInput.value = q;
-          document.getElementById('rag-form')?.dispatchEvent(new Event('submit', { cancelable: true }));
-        }
-      });
-      ragPresets.appendChild(chip);
-    });
-  }
-}
 
 async function executeEndToEndPipeline(file) {
   if (isRenderDemoDeployment()) {
@@ -3050,30 +2818,15 @@ async function executeEndToEndPipeline(file) {
   const isImageFile = fileName.endsWith('.jpg') || fileName.endsWith('.jpeg') || fileName.endsWith('.png') || fileName.endsWith('.webp') || fileMime.startsWith('image/');
   const isVideoFile = fileName.endsWith('.mp4') || fileName.endsWith('.mov') || fileMime.startsWith('video/');
 
-  if (!isImageFile && !isVideoFile) {
-    showToast('Unsupported format. Please upload an MP4/MOV video or JPG/PNG image.', 'error', 5000);
+  if (isImageFile) {
+    showToast('Single image uploads are not supported. Please upload an MP4 or MOV video walkthrough for full 3D spatial reconstruction.', 'error', 5000);
     return;
   }
 
-  // --- Smart Routing Logic ---
-  // IF VIDEO (.mp4, .mov): Ensure pipeline is set to a video-compatible mode (Standard 3DGS or Triangle Splatting).
-  // If it is currently on Instant Object, switch it to Standard 3DGS.
-  if (isVideoFile) {
-    if (STATE.trainingMethod === 'image2splat') {
-      setTrainingMethod('3dgs', true);
-      showToast('Walkthrough video detected — switched to Standard 3DGS pipeline', 'info', 3000);
-    }
+  if (!isVideoFile) {
+    showToast('Unsupported format. Please upload an MP4 or MOV video walkthrough.', 'error', 5000);
+    return;
   }
-
-  // IF IMAGE (.jpg, .jpeg, .png, .webp): Automatically switch the Training Pipeline toggle to Instant Object (Single Image).
-  if (isImageFile) {
-    if (STATE.trainingMethod !== 'image2splat') {
-      setTrainingMethod('image2splat', true);
-      showToast('Single photo detected — switched to Instant Object Scan mode', 'info', 3000);
-    }
-  }
-
-  const isImageMode = STATE.trainingMethod === 'image2splat' || isImageFile;
 
   // File size check: Max 1024 MB (1 GB)
   const MAX_FILE_SIZE_MB = 1024;
@@ -3083,45 +2836,42 @@ async function executeEndToEndPipeline(file) {
     return;
   }
 
-  // Pre-Flight Metadata Check in Browser: ONLY for video pipelines (landscape vs portrait).
-  // Images BYPASS this entirely!
-  if (isVideoFile) {
-    const orientation = await checkVideoOrientationInBrowser(file);
-    if (orientation.isPortrait) {
-      const portraitAudit = {
-        readiness_score: 0,
-        status: 'REJECTED',
-        aspect_ratio_rejected: true,
-        detected_context: 'vertical_video',
-        evaluated_by: 'Browser Pre-Flight (Orientation Guard)',
-        issues_detected: [
-          {
-            timestamp: '00:00',
-            type: 'Invalid Format: Vertical Video Detected',
-            detail: '3D Gaussian Splatting requires a wide horizontal field of view. Please rotate your camera to Landscape mode (horizontal) and capture the space again.',
-            is_critical_blocker: true,
-          }
-        ],
-        director_guidance: [
-          'Rotate your recording device 90° into Landscape mode (horizontal) before filming.',
-          'Maintain a wide horizontal field of view to allow COLMAP to identify overlapping feature points across frames.',
-          'Capture a slow, continuous perimeter loop around the subject or space in 16:9 landscape aspect ratio.'
-        ],
-        laplacian_stats: {
-          width: orientation.width,
-          height: orientation.height,
-          isPortrait: true,
+  // Pre-Flight Metadata Check in Browser: video orientation check (landscape vs portrait).
+  const orientation = await checkVideoOrientationInBrowser(file);
+  if (orientation.isPortrait) {
+    const portraitAudit = {
+      readiness_score: 0,
+      status: 'REJECTED',
+      aspect_ratio_rejected: true,
+      detected_context: 'vertical_video',
+      evaluated_by: 'Browser Pre-Flight (Orientation Guard)',
+      issues_detected: [
+        {
+          timestamp: '00:00',
+          type: 'Invalid Format: Vertical Video Detected',
+          detail: '3D Gaussian Splatting requires a wide horizontal field of view. Please rotate your camera to Landscape mode (horizontal) and capture the space again.',
+          is_critical_blocker: true,
         }
-      };
+      ],
+      director_guidance: [
+        'Rotate your recording device 90° into Landscape mode (horizontal) before filming.',
+        'Maintain a wide horizontal field of view to allow COLMAP to identify overlapping feature points across frames.',
+        'Capture a slow, continuous perimeter loop around the subject or space in 16:9 landscape aspect ratio.'
+      ],
+      laplacian_stats: {
+        width: orientation.width,
+        height: orientation.height,
+        isPortrait: true,
+      }
+    };
 
-      dropTitle.textContent = file.name;
-      dropSubtitle.textContent = `Rejected: Vertical Video (${orientation.width}x${orientation.height})`;
-      jobPill.className = 'badge error';
-      jobPill.textContent = 'Rejected';
-      showToast('Vertical video detected. 3DGS photogrammetry requires landscape footage.', 'error', 6000);
-      await showQualityAuditModal(portraitAudit);
-      return;
-    }
+    dropTitle.textContent = file.name;
+    dropSubtitle.textContent = `Rejected: Vertical Video (${orientation.width}x${orientation.height})`;
+    jobPill.className = 'badge error';
+    jobPill.textContent = 'Rejected';
+    showToast('Vertical video detected. 3DGS photogrammetry requires landscape footage.', 'error', 6000);
+    await showQualityAuditModal(portraitAudit);
+    return;
   }
 
   dropTitle.textContent = file.name;
@@ -3133,10 +2883,10 @@ async function executeEndToEndPipeline(file) {
     // --- Step 1: Upload ---
     setPipelineStep(1);
     const formData = new FormData();
-    formData.append(isImageMode ? 'image' : 'video', file);
+    formData.append('video', file);
 
     progressCard.classList.remove('hidden');
-    progressStage.textContent = `Uploading ${fileSizeMb.toFixed(1)} MB ${isImageMode ? 'photo' : 'video'}...`;
+    progressStage.textContent = `Uploading ${fileSizeMb.toFixed(1)} MB video...`;
     progressBar.style.width = '5%';
     progressPct.textContent = '5%';
 
@@ -3155,96 +2905,35 @@ async function executeEndToEndPipeline(file) {
       if (pct < 100) {
         progressStage.textContent = `Uploading: ${pct}% (${loadedMb} / ${totalMb} MB)...`;
       } else {
-        progressStage.textContent = isImageMode
-          ? 'Upload complete! Ingesting photo for Instant Object Scan...'
-          : 'Upload complete! Running Pre-Flight AI Quality Audit & Extracting Frames...';
+        progressStage.textContent = 'Upload complete! Running Pre-Flight AI Quality Audit & Extracting Frames...';
       }
     });
     if (btnCancelUpload) btnCancelUpload.classList.add('hidden');
     if (!uploadData.success) throw new Error(uploadData.error || 'Upload failed');
 
-    // --- Action for IMAGES: Trigger Autonomous Vision RAG & Bypass Quality Audit Entirely ---
-    if (isImageMode) {
-      runAutonomousVisionRAG(uploadData.videoId);
+    // --- Video Duration Check & Pre-Flight AI Video Quality Gatekeeper Intercept ---
+    const duration = uploadData.metadata?.durationSeconds || 0;
+    if (duration > 90) {
+      showToast(`Notice: Video duration is ${Math.round(duration)}s. Recommended length is 30–60s for optimal reconstruction speed.`, 'warning', 6000);
     }
 
-    // --- Action for VIDEOS: Duration Check & Pre-Flight AI Video Quality Gatekeeper Intercept ---
-    if (isVideoFile) {
-      const duration = uploadData.metadata?.durationSeconds || 0;
-      if (duration > 90) {
-        showToast(`Notice: Video duration is ${Math.round(duration)}s. Recommended length is 30–60s for optimal reconstruction speed.`, 'warning', 6000);
+    if (uploadData.audit) {
+      const score = Math.round(uploadData.audit.readiness_score || 0);
+      progressStage.textContent = `Pre-Flight AI Audit: Score ${score}% (${uploadData.audit.status})`;
+
+      const auditDecision = await showQualityAuditModal(uploadData.audit);
+      if (auditDecision.action === 'reupload' || auditDecision.action === 'cancel') {
+        dropTitle.textContent = 'Drop space walkthrough video (30–60s, MP4/MOV)';
+        dropSubtitle.textContent = 'Standard 3D Gaussian Splatting • Nerfstudio Splatfacto (max 1GB)';
+        jobPill.className = 'badge idle';
+        jobPill.textContent = 'Idle';
+        progressCard.classList.add('hidden');
+        showToast('Video upload cancelled. Follow director guidance when recording for optimal results.', 'info', 4500);
+        return;
       }
-
-      if (uploadData.audit) {
-        const score = Math.round(uploadData.audit.readiness_score || 0);
-        progressStage.textContent = `Pre-Flight AI Audit: Score ${score}% (${uploadData.audit.status})`;
-
-        const auditDecision = await showQualityAuditModal(uploadData.audit);
-        if (auditDecision.action === 'reupload' || auditDecision.action === 'cancel') {
-          dropTitle.textContent = 'Drop a walkthrough video or single object photo';
-          dropSubtitle.textContent = 'Supports MP4/MOV walkthroughs (max 1GB) or JPG/PNG photos for Instant 3D scan';
-          jobPill.className = 'badge idle';
-          jobPill.textContent = 'Idle';
-          progressCard.classList.add('hidden');
-          showToast('Video upload cancelled. Follow director guidance when recording for optimal results.', 'info', 4500);
-          return;
-        }
-        if (auditDecision.action === 'bypass') {
-          showToast('Proceeding with training via manual bypass. GPU compute credit warning acknowledged.', 'warning', 5000);
-        }
+      if (auditDecision.action === 'bypass') {
+        showToast('Proceeding with training via manual bypass. GPU compute credit warning acknowledged.', 'warning', 5000);
       }
-    }
-
-    // --- Fast Path: Instant Object Scan (Image2Splat) ---
-    if (isImageMode) {
-      setPipelineStep(2);
-      progressStage.textContent = 'Single object photo ingested; lifting 3D depth cloud...';
-      progressBar.style.width = '30%';
-      progressPct.textContent = '30%';
-
-      setPipelineStep(3);
-      progressStage.textContent = 'Configuring Image2Splat instant inference parameters...';
-      progressBar.style.width = '45%';
-      progressPct.textContent = '45%';
-
-      nemotronCard.classList.remove('hidden');
-      nemotronMatcherBadge.textContent = 'instant_inference';
-      nemotronItersVal.textContent = 'Instant (Image2Splat)';
-      nemotronFramesVal.textContent = '1 / 1';
-      nemotronReasoningText.textContent = '"Bypassing COLMAP SfM feature matching. Deploying direct single-image Image2Splat depth unprojection on Nebius L40S."';
-
-      setPipelineStep(4);
-      jobPill.className = 'badge processing';
-      jobPill.textContent = 'Generating';
-      progressStage.textContent = 'Running Nebius GPU Image2Splat inference runner...';
-      progressBar.style.width = '55%';
-      progressPct.textContent = '55%';
-
-      if (btnAbortJob) {
-        btnAbortJob.classList.remove('hidden');
-        btnAbortJob.disabled = false;
-      }
-
-      const jobData = await safeFetchJson('/api/spatial/job/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          videoId: uploadData.videoId,
-          originalFilename: uploadData.originalName || uploadData.filename || file?.name || 'photo.jpg',
-          deviceName: 'Instant Object (Single Image)',
-          uploadTimestamp: new Date().toISOString(),
-          colmapMatcher: 'none',
-          recommendedIterations: 1,
-          filteredFrameIndices: [0],
-          training_method: 'image2splat',
-        }),
-      });
-      if (!jobData.success) throw new Error(jobData.error || 'Failed to start instant object reconstruction');
-
-      STATE.activeJobId = jobData.jobId;
-      progressJobId.textContent = `job: ${jobData.jobId.slice(0, 8)}...`;
-      await pollJobUntilReady(jobData.jobId, uploadData, { colmapMatcher: 'none' });
-      return;
     }
 
     // --- Step 2: Dynamic Overlap Frame Extraction ---
@@ -3943,7 +3632,7 @@ if (btnResetRotation) {
     const targetY = STATE.pivotTargetY || 1.0;
     camera.up.set(0, 1, 0);
     const viewDist = STATE.isObjectScan ? 2.3 : 1.8;
-    camera.position.set(0, targetY + 0.35, viewDist);
+    camera.position.set(0, targetY + (STATE.isObjectScan ? 0.05 : 0.35), viewDist);
     updateCameraTargets(0, targetY, 0);
     if (trackballControls) {
       trackballControls.target.set(0, targetY, 0);
@@ -3975,7 +3664,7 @@ if (btnResetCam) {
     const targetY = STATE.pivotTargetY || STATE.eyeHeight || 1.0;
     camera.up.set(0, 1, 0);
     const viewDist = STATE.isObjectScan ? 2.3 : 1.8;
-    camera.position.set(0, targetY + 0.35, viewDist);
+    camera.position.set(0, targetY + (STATE.isObjectScan ? 0.05 : 0.35), viewDist);
     updateCameraTargets(0, targetY, 0);
     if (trackballControls) {
       trackballControls.target.set(0, targetY, 0);
@@ -4050,15 +3739,7 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-const btnTogglePoints = document.getElementById('btn-toggle-points');
-if (btnTogglePoints) {
-  btnTogglePoints.addEventListener('click', () => {
-    if (STATE.dropInViewer) {
-      STATE.dropInViewer.visible = !STATE.dropInViewer.visible;
-      btnTogglePoints.classList.toggle('active', STATE.dropInViewer.visible);
-    }
-  });
-}
+// Splat Glow aesthetic is permanently enabled by default for all 3DGS scenes
 
 // --- Spatial Audio RAG Panel Integration ---
 const ragForm = document.getElementById('rag-form');
@@ -5797,8 +5478,7 @@ async function resetUIToDefaultState() {
   // 4. Re-enable all training method radios and set default to Standard 3DGS
   const btn3dgs = document.getElementById('btn-method-3dgs');
   const btnTriangle = document.getElementById('btn-method-triangle');
-  const btnImage = document.getElementById('btn-method-image2splat');
-  [btn3dgs, btnTriangle, btnImage].forEach((btn) => {
+  [btn3dgs, btnTriangle].forEach((btn) => {
     if (btn) {
       btn.classList.remove('method-disabled');
       btn.removeAttribute('disabled');
@@ -5808,8 +5488,8 @@ async function resetUIToDefaultState() {
   setTrainingMethod('3dgs', false);
 
   // 5. Reset dropzone text & status pills
-  if (dropTitle) dropTitle.textContent = 'Drop a walkthrough video or single object photo';
-  if (dropSubtitle) dropSubtitle.textContent = 'Supports MP4/MOV walkthroughs (max 1GB) or JPG/PNG photos for Instant 3D scan';
+  if (dropTitle) dropTitle.textContent = 'Drop space walkthrough video (30–60s, MP4/MOV)';
+  if (dropSubtitle) dropSubtitle.textContent = 'Standard 3D Gaussian Splatting • Nerfstudio Splatfacto (max 1GB)';
   if (jobPill) {
     jobPill.className = 'badge idle';
     jobPill.textContent = 'Idle';
@@ -6076,6 +5756,7 @@ async function loadRecentScenes() {
     };
 
     // Helper to determine if a model is an image/photo
+    // Helper to determine if a model is an image/photo
     const isModelImage = (m) => Boolean(
       m.isImage === true ||
       m.trainingMethod === 'image2splat' ||
@@ -6083,41 +5764,19 @@ async function loadRecentScenes() {
       (m.deviceName && (m.deviceName.includes('Single Image') || m.deviceName.includes('Instant Object')))
     );
 
-    const cleanVideoModels = [];
-    const cleanImageModels = [];
+    const cleanVideoModels = (data.videoModels || []).filter(m => !isModelImage(m));
+    const videoModels = dedupeModels(cleanVideoModels).slice(0, 5);
 
-    for (const m of (data.imageModels || [])) {
-      cleanImageModels.push({ ...m, isImage: true, trainingMethod: 'image2splat' });
-    }
-
-    for (const m of (data.videoModels || [])) {
-      if (isModelImage(m)) {
-        if (!cleanImageModels.some((img) => img.jobId === m.jobId || img.name === m.name)) {
-          cleanImageModels.push({ ...m, isImage: true, trainingMethod: 'image2splat' });
-        }
-      } else {
-        cleanVideoModels.push(m);
-      }
-    }
-
-    const videoModels = dedupeModels(cleanVideoModels).slice(0, 3);
-    const imageModels = dedupeModels(cleanImageModels).slice(0, 3);
-    const combinedModels = dedupeModels([...videoModels, ...imageModels]);
-
-    STATE.recentModels = combinedModels;
+    STATE.recentModels = videoModels;
     STATE.recentVideoModels = videoModels;
-    STATE.recentImageModels = imageModels;
+    STATE.recentImageModels = [];
 
     if (recentSpacesCount) recentSpacesCount.textContent = `${videoModels.length}`;
-    if (recentObjectsCount) recentObjectsCount.textContent = `${imageModels.length}`;
-
     if (recentSpacesChips) recentSpacesChips.innerHTML = '';
-    if (recentObjectsChips) recentObjectsChips.innerHTML = '';
 
     let matchedActive = false;
     let activeChipElement = null;
 
-    // 1. Populate Recent Spaces (Video)
     if (videoModels.length === 0) {
       if (recentSpacesChips) {
         recentSpacesChips.innerHTML = '<span class="scenes-empty-text">No recent video spaces</span>';
@@ -6134,7 +5793,7 @@ async function loadRecentScenes() {
         if (isCurrentActive && !matchedActive) {
           matchedActive = true;
           STATE.activeScene = m;
-          const method = m.trainingMethod || (m.format === 'ply' ? 'triangle' : (m.isImage ? 'image2splat' : '3dgs'));
+          const method = m.trainingMethod || (m.format === 'ply' ? 'triangle' : '3dgs');
           setTrainingMethod(method, false);
           updatePipelineUIForActiveScene();
         }
@@ -6145,59 +5804,24 @@ async function loadRecentScenes() {
       });
     }
 
-    // 2. Populate Recent Objects (Photo)
-    if (imageModels.length === 0) {
-      if (recentObjectsChips) {
-        recentObjectsChips.innerHTML = '<span class="scenes-empty-text">No recent photo objects</span>';
+    // Fallback selection if no model was matched active yet
+    if (!matchedActive && videoModels.length > 0) {
+      const fallbackModel = videoModels[0];
+      STATE.activeScene = fallbackModel;
+      const activeMethod = fallbackModel.trainingMethod || (fallbackModel.format === 'ply' ? 'triangle' : '3dgs');
+      setTrainingMethod(activeMethod, false);
+      updatePipelineUIForActiveScene();
+
+      const allChips = document.querySelectorAll('.scene-chip');
+      if (allChips.length > 0) {
+        allChips[0].classList.add('active');
+        const dot = allChips[0].querySelector('.status-dot');
+        if (dot) dot.classList.add('online');
       }
-    } else {
-      imageModels.forEach((m) => {
-        const isCurrentActive = STATE.activeModelUrl && (
-          STATE.activeModelUrl === m.url ||
-          STATE.activeModelUrl.endsWith(m.filename)
-        );
-
-        if (isCurrentActive && !matchedActive) {
-          matchedActive = true;
-          STATE.activeScene = m;
-          const method = m.trainingMethod || (m.format === 'ply' ? 'triangle' : (m.isImage ? 'image2splat' : '3dgs'));
-          setTrainingMethod(method, false);
-          updatePipelineUIForActiveScene();
-        }
-
-        const chip = createRecentSceneChip(m, isCurrentActive);
-        if (isCurrentActive) activeChipElement = chip;
-        if (recentObjectsChips) recentObjectsChips.appendChild(chip);
-      });
-    }
-
-    // 3. Fallback selection if no model was matched active yet
-    if (!matchedActive) {
-      const fallbackModel = videoModels[0] || imageModels[0];
-      if (fallbackModel) {
-        STATE.activeScene = fallbackModel;
-        const activeMethod = fallbackModel.trainingMethod || (fallbackModel.format === 'ply' ? 'triangle' : (fallbackModel.isImage ? 'image2splat' : '3dgs'));
-        setTrainingMethod(activeMethod, false);
-        updatePipelineUIForActiveScene();
-
-        // Highlight fallback chip in whichever container it belongs to
-        const allChips = document.querySelectorAll('.scene-chip');
-        if (allChips.length > 0) {
-          allChips[0].classList.add('active');
-          const dot = allChips[0].querySelector('.status-dot');
-          if (dot) dot.classList.add('online');
-        }
-      }
-    }
-
-    if (STATE.trainingMethod === 'image2splat' || (STATE.activeScene && STATE.activeScene.isImage)) {
-      const objWidget = document.getElementById('section-recent-objects');
-      if (objWidget) objWidget.classList.remove('collapsed');
     }
   } catch (err) {
     console.warn('[Splatris] Could not load recent scenes:', err);
     if (recentSpacesChips) recentSpacesChips.innerHTML = '<span class="scenes-empty-text">Spaces unavailable</span>';
-    if (recentObjectsChips) recentObjectsChips.innerHTML = '<span class="scenes-empty-text">Objects unavailable</span>';
   }
 }
 

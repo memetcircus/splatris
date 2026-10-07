@@ -31,18 +31,18 @@ const storage = multer.diskStorage({
   },
 });
 
-// Allowed video and image file extensions and MIME types
-const allowedExtensions = ['.mp4', '.mov', '.jpg', '.jpeg', '.png'];
-const allowedMimeTypes = ['video/mp4', 'video/quicktime', 'image/jpeg', 'image/png', 'image/jpg'];
+// Allowed video file extensions and MIME types
+const allowedExtensions = ['.mp4', '.mov'];
+const allowedMimeTypes = ['video/mp4', 'video/quicktime'];
 
 const fileFilter = (req, file, cb) => {
   const ext = path.extname(file.originalname).toLowerCase();
   const mime = file.mimetype;
 
-  if (allowedExtensions.includes(ext) || allowedMimeTypes.includes(mime) || mime.startsWith('image/')) {
+  if (allowedExtensions.includes(ext) || allowedMimeTypes.includes(mime)) {
     cb(null, true);
   } else {
-    cb(new Error(`Invalid file type (${ext || mime}). Only MP4, MOV videos and JPG, PNG images are supported.`), false);
+    cb(new Error(`Invalid file type (${ext || mime}). Only MP4 and MOV video walkthroughs are supported for spatial reconstructions. Single photo uploads are not supported.`), false);
   }
 };
 
@@ -54,9 +54,9 @@ const upload = multer({
   },
 });
 
-// Middleware to support either 'video', 'image', or 'file' field name
+// Middleware to support either 'video' or 'file' field name
 const handleUpload = (req, res, next) => {
-  upload.fields([{ name: 'video', maxCount: 1 }, { name: 'image', maxCount: 1 }, { name: 'file', maxCount: 1 }])(req, res, (err) => {
+  upload.fields([{ name: 'video', maxCount: 1 }, { name: 'file', maxCount: 1 }])(req, res, (err) => {
     if (err) {
       if (err instanceof multer.MulterError) {
         if (err.code === 'LIMIT_FILE_SIZE') {
@@ -77,12 +77,12 @@ const handleUpload = (req, res, next) => {
  */
 router.post('/upload', handleUpload, async (req, res) => {
   try {
-    const uploadedFile = req.files?.video?.[0] || req.files?.image?.[0] || req.files?.file?.[0];
+    const uploadedFile = req.files?.video?.[0] || req.files?.file?.[0];
 
     if (!uploadedFile) {
       return res.status(400).json({
         success: false,
-        error: 'No video or image file provided. Please upload an MP4/MOV video or JPG/PNG image.',
+        error: 'No video file provided. Please upload an MP4 or MOV video walkthrough.',
       });
     }
 
@@ -94,40 +94,11 @@ router.post('/upload', handleUpload, async (req, res) => {
 
     const ext = path.extname(uploadedFile.filename).toLowerCase();
     const isImage = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext) || (uploadedFile.mimetype && uploadedFile.mimetype.startsWith('image/'));
-
-    // --- Fast Branch for Instant Object Mode (Single Image) ---
     if (isImage) {
-      const targetFrame = path.join(targetFramesDir, 'frame_0001.jpg');
-      await fs.copyFile(videoPath, targetFrame);
-
-      const imageMeta = {
-        videoId,
-        originalFilename: originalName,
-        deviceName: 'Instant Object (Single Image)',
-        uploadTimestamp: new Date().toISOString(),
-        isImage: true,
-        durationSeconds: 0,
-        totalFrames: 1,
-      };
-
-      await fs.writeFile(
-        path.join(targetFramesDir, 'video_meta.json'),
-        JSON.stringify(imageMeta, null, 2)
-      );
-
-      console.log(`[Upload] Ingested single photo for Instant Object Scan (Image2Splat): ${originalName} -> ${videoId}`);
-      return res.json({
-        success: true,
-        videoId,
-        originalName,
-        totalFrames: 1,
-        frames: [`/uploads/frames/${videoId}/frame_0001.jpg`],
-        targetFrames: 1,
-        fps: 1,
-        metadata: imageMeta,
-        audit: null,
-        isImage: true,
-        trainingMethod: 'image2splat',
+      try { await fs.unlink(videoPath); } catch {}
+      return res.status(400).json({
+        success: false,
+        error: 'Single photo uploads (Image2Splat) have been removed. Please upload an MP4 or MOV video walkthrough for full 3D spatial reconstruction.',
       });
     }
 

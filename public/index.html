@@ -122,9 +122,9 @@
       </div>
 
       <div class="panel-body">
-        <!-- 1. Video & Image Universal Dropzone -->
+        <!-- 1. Video Universal Dropzone -->
         <div id="video-dropzone" class="dropzone-box">
-          <input type="file" id="video-file-input" accept="video/mp4,video/quicktime,image/jpeg,image/png"
+          <input type="file" id="video-file-input" accept="video/mp4,video/quicktime"
             class="file-input-hidden">
           <div class="dropzone-content">
             <div class="dropzone-icon">
@@ -135,9 +135,8 @@
               </svg>
             </div>
             <div class="dropzone-text">
-              <strong id="dropzone-title">Drop a walkthrough video or single object photo</strong>
-              <span id="dropzone-subtitle">Supports MP4/MOV walkthroughs (max 1GB) or JPG/PNG photos for Instant 3D
-                scan</span>
+              <strong id="dropzone-title">Drop a walkthrough video</strong>
+              <span id="dropzone-subtitle">Supports MP4/MOV video walkthroughs (max 1GB)</span>
             </div>
           </div>
         </div>
@@ -177,17 +176,6 @@
                   <span class="seg-type-tag">Video</span>
                 </div>
                 <span class="seg-desc">Mesh-based • WebXR Optimized</span>
-              </div>
-            </button>
-            <button type="button" class="segmented-btn" data-method="image2splat" role="radio" aria-checked="false"
-              id="btn-method-image2splat" title="Instant Object: Single Image 3D Reconstruction via Image2Splat">
-              <span class="seg-radio-dot"></span>
-              <div class="seg-info">
-                <div class="seg-title-row">
-                  <span class="seg-title">Instant Object</span>
-                  <span class="seg-type-tag photo">Photo</span>
-                </div>
-                <span class="seg-desc">Single Image • Image2Splat (15-20s)</span>
               </div>
             </button>
           </div>
@@ -246,26 +234,6 @@
           </div>
           <div class="nemotron-quote-wrap">
             <p id="nemotron-reasoning-text" class="nemotron-quote">Analyzing scene...</p>
-          </div>
-        </div>
-
-        <!-- 3b. Instant Object Vision RAG Fallback Input Card -->
-        <div id="instant-object-fallback-card" class="nemotron-card hidden"
-          style="border: 1px solid rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.08); padding: 14px;">
-          <div class="nemotron-card-header" style="margin-bottom: 8px;">
-            <span class="nemotron-pill" style="background: rgba(245, 158, 11, 0.25); color: #fbbf24;">Vision RAG
-              Clarification</span>
-            <span class="badge-mini" style="background: rgba(245, 158, 11, 0.3); color: #fde68a;">Manual Input</span>
-          </div>
-          <p id="fallback-prompt-text" style="margin: 0 0 10px 0; font-size: 13px; color: #fef3c7; font-weight: 500;">
-            Could not clearly identify the object. What is this?</p>
-          <div style="display: flex; gap: 8px;">
-            <input type="text" id="input-manual-object-name" class="glass-input"
-              placeholder="e.g. Modern Accent Chair, Coffee Maker..."
-              style="flex: 1; font-size: 13px; padding: 7px 12px; background: rgba(0,0,0,0.4); border-color: rgba(245, 158, 11, 0.4); color: #fff;">
-            <button type="button" id="btn-confirm-object-name" class="btn-primary"
-              style="padding: 7px 14px; font-size: 12px; white-space: nowrap; background: #d97706; border-color: #f59e0b;">Search
-              & Guide</button>
           </div>
         </div>
 
@@ -369,32 +337,6 @@
               <span class="scenes-empty-text">Loading spaces...</span>
             </div>
           </div>
-
-          <!-- Section B: Recent Objects (Photo) -->
-          <div class="recent-scenes-widget" id="section-recent-objects">
-            <div class="control-label flex-between recent-accordion-header" id="header-recent-objects"
-              title="Toggle Recent Objects list">
-              <span class="flex-align-center">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                  style="margin-right: 6px; color: #f472b6;">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                  <circle cx="12" cy="13" r="4"></circle>
-                </svg>
-                Recent Objects <span class="badge-pipeline-tag badge-image"
-                  style="margin-left: 5px; font-size: 0.6rem; padding: 1px 5px;">Photo</span>
-              </span>
-              <div class="flex-align-center" style="gap: 5px;">
-                <span id="recent-objects-count" class="badge-subtle">0</span>
-                <svg class="accordion-arrow" width="12" height="12" viewBox="0 0 24 24" fill="none"
-                  stroke="currentColor" stroke-width="2">
-                  <polyline points="6 9 12 15 18 9"></polyline>
-                </svg>
-              </div>
-            </div>
-            <div id="recent-objects-chips" class="recent-scenes-list">
-              <span class="scenes-empty-text">Loading objects...</span>
-            </div>
-          </div>
         </div>
 
         <!-- 7. Viewport Modes Controls -->
@@ -405,7 +347,6 @@
             <button id="btn-fly-cam" class="btn-chip"
               title="Toggle Turntable Spin around Vertical Axis (Auto Rotate)">Turntable</button>
             <button id="btn-reset-cam" class="btn-chip" title="Reset View and Center on Object">Center View</button>
-            <button id="btn-toggle-points" class="btn-chip active" title="Toggle Gaussian Glow">Splat Glow</button>
           </div>
         </div>
       </div>
@@ -736,7 +677,7 @@
     </div>
   </footer>
 
-  <script src="app.js?v=20261006_photo_categorization_v22"></script>
+  <script src="app.js?v=20261007_splat_glow_default_v33"></script>
 </body>
 
 </html>
