@@ -229,13 +229,3 @@ Splatris includes pre-packaged demo 3D splat models in `uploads/models/`, allowi
 ## 📜 License
 
 This project is licensed under the **Apache License 2.0**. See the [LICENSE](LICENSE) file for complete details.
-
----
-
-## 👥 Hackathon Team & Acknowledgments
-
-- **Developed for:** Nebius × NVIDIA Global AI Hackathon (2026)
-- **Special Thanks:**
-  - **NVIDIA** for the open-source Nemotron family (`nvidia/Nemotron-3-Ultra`).
-  - **Nebius** for Token Factory inference acceleration and AI Cloud infrastructure.
-  - **Tavily** for autonomous web search and grounding APIs.
