@@ -14,33 +14,33 @@
 
 ## 🌟 Executive Summary
 
-**Splatris** is a full-stack spatial intelligence platform that transforms raw smartphone videos or photos into interactive, photorealistic **3D Gaussian Splats (3DGS)** and **Triangle Splatting** environments. It connects the 3D reconstructed scene with an embodied **Spatial AI Guide** powered by **NVIDIA Nemotron-3-Ultra** on **Nebius Token Factory**, grounded with real-time web intelligence via **Tavily Search**, and experienced immersively via **WebXR on Meta Quest** with positional 3D spatial audio.
+**Splatris** is a full-stack spatial intelligence platform that transforms raw smartphone walkthrough videos into interactive, photorealistic **3D Gaussian Splats (3DGS)** and **Triangle Splatting** environments. It connects the 3D reconstructed scene with an embodied **Spatial AI Guide** powered by **NVIDIA Nemotron-3-Ultra** on **Nebius Token Factory**, grounded with real-time web intelligence via **Tavily Search**, and experienced immersively via **WebXR on Meta Quest** with natural voice narration.
 
-Whether exploring historical artifacts, inspecting industrial digital twins, or analyzing complex equipment, Splatris allows users to step inside the 3D scene, point at physical elements with laser reticles, ask complex contextual questions, and hear articulate answers spatialized in 3D audio directly from the object's real-world coordinates.
+Whether exploring historical artifacts, inspecting industrial digital twins, or analyzing complex equipment, Splatris allows users to step inside the 3D scene, point at physical elements with laser reticles, ask contextual questions, and hear articulate answers narrated clearly in the audio guide.
 
 ---
 
 ## 🚀 Key Features
 
-### 1. 🎥 Multimodal Video & Image Ingestion Pipeline
-- **Pre-Flight AI Quality Audit**: Evaluates uploaded videos for blur, camera motion smoothness, frame count, and lighting quality using `nvidia/Nemotron-3-Ultra` before dedicating GPU resources.
+### 1. 🎥 Multimodal Video Ingestion & Photogrammetry Pipeline
+- **Pre-Flight AI Quality Audit**: Evaluates uploaded videos for motion blur, camera smoothness, frame count, and lighting quality using `nvidia/Nemotron-3-Ultra` before dedicating GPU resources.
 - **Autonomous Training Calibration**: Nemotron reasons over scene camera metadata, field of view, and frame density to calculate optimal 3DGS hyper-parameters (learning rates, densification iterations, covariance scaling).
-- **Dual Pipeline Architecture**: Seamlessly switch between **Standard 3DGS** (Gaussian Splatting) and **Triangle Splatting** meshes for high-fidelity spatial fidelity.
-- **Single Image 3D Lifting (Image2Splat)**: Instant depth-conditioned 3D splat generation from a single photograph.
+- **Dual Pipeline Architecture**: Seamlessly switch between **Standard 3DGS** (Gaussian Splatting) for maximum desktop photorealism and **Triangle Splatting** for lightweight, high-FPS mobile VR performance.
+- **Fast Pipeline Switch (<90s)**: Reuses cached COLMAP camera poses to convert existing video scenes into Triangle Splats in under 90 seconds without re-running Structure-from-Motion.
 
 ### 2. 🧠 Autonomous Spatial RAG with NVIDIA Nemotron & Tavily
 - **Interactive 3D Raycasting**: Click on any object in desktop 3D view or point with the VR controller to cast a spatial ray through 3D space.
 - **Object Identification via Nemotron Vision**: Identifies target geometry from training video frames and bounding crops.
 - **Real-Time Web Grounding via Tavily API**: Queries Tavily with advanced search depth to retrieve comprehensive, up-to-date historical, technical, and cultural specifications for the identified object.
-- **Spatial Reasoning via Nemotron-3-Ultra**: Synthesizes grounded answers tailored specifically to the user's 3D coordinates and perspective, while dynamically formulating 2–3 follow-up exploratory questions.
+- **Spatial Reasoning via Nemotron-3-Ultra**: Synthesizes grounded answers tailored specifically to the user's perspective, with strict guardrails ensuring questions remain strictly focused on the active 3D space.
 
-### 3. 🥽 Immersive WebXR & Spatial Audio (Meta Quest 3 / Pro)
+### 3. 🥽 Immersive WebXR on Meta Quest (Quest 3 / Pro)
 - **Controller-Hand Separation**:
   - **Right Controller Trigger**: Exclusively dedicated to 3D scene scanning and Tavily object grounding.
   - **Left Controller Trigger**: Exclusively dedicated to in-VR HUD panel selection (Mute toggle, Question card selection).
 - **In-VR Laser Reticle**: Real-time laser pointer target dot projected onto the floating HUD panel for pinpoint interaction accuracy.
 - **Dynamic Glassmorphic HUD**: Displays multi-line titles, complete questions without truncation, and adaptive response text.
-- **Web Audio HRTF Spatial Audio Queue**: Chunks responses into fluid, non-overlapping natural speech streams piped through WebXR AudioContext and positioned directly at the 3D target coordinates.
+- **Conversational Voice Guide**: Streams clear natural speech narration and conversational guidance for the reconstructed 3D space.
 - **Grip HUD Toggle & Clean Exit**: Squeeze Left/Right Grip to open/close the panel; press [A] or [X] to smoothly fade out audio and exit WebXR.
 
 ---
@@ -52,7 +52,7 @@ flowchart TD
     subgraph Client ["Client Layer (Desktop & Meta Quest VR)"]
         UI["WebGL / WebXR Viewport (GaussianSplats3D + Three.js)"]
         HUD["Floating In-VR HUD & Laser Reticle"]
-        Audio["Web Audio API HRTF Spatial Audio Stream"]
+        Audio["Web Audio API Voiceover Guide & Speech Stream"]
     end
 
     subgraph Backend ["Splatris Node.js Orchestrator"]
@@ -79,8 +79,8 @@ flowchart TD
     RagEngine -->|Object Frame Crop| NemotronVision
     NemotronVision -->|Identified Object| Tavily
     Tavily -->|Live Web Intelligence| NemotronReasoning
-    NemotronReasoning -->|Grounded Answer + Coordinates| Server
-    Server -->|TTS MP3 Stream + 3D Emitter Coords| Audio
+    NemotronReasoning -->|Grounded Answer| Server
+    Server -->|TTS Audio Stream| Audio
     Server -->|Scene Update + Questions| HUD
 
     Server -->|Training Job Dispatch| Trainer
@@ -91,7 +91,7 @@ flowchart TD
 
 ## ☁️ Nebius AI Cloud Infrastructure & Hardware Verification
 
-Splatris offloads photogrammetry (COLMAP Structure-from-Motion), 3D Gaussian Splatting, and single-photo depth lifting (Image2Splat) directly to an **NVIDIA® L40S GPU** instance provisioned on **Nebius AI Cloud**.
+Splatris offloads photogrammetry (COLMAP Structure-from-Motion), 3D Gaussian Splatting, and Triangle Splatting directly to an **NVIDIA® L40S GPU** instance provisioned on **Nebius AI Cloud**.
 
 <div align="center">
   <img src="docs/assets/nebius_ai_cloud_vm.png" alt="Nebius AI Cloud L40S Compute Instance" width="900" />

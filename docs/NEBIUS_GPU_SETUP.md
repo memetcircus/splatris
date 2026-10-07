@@ -115,7 +115,6 @@ git clone https://github.com/memetcircus/splatris.git /home/ubuntu/splatris
 Verify key pipeline worker files are present:
 - `/home/ubuntu/splatris/pipeline/gpu_worker_server.py` — High-throughput FastAPI service
 - `/home/ubuntu/splatris/pipeline/train_3dgs.py` — 3D Gaussian Splatting & Triangle trainer
-- `/home/ubuntu/splatris/pipeline/infer_image2splat.py` — Single-photo depth lifting (Image2Splat)
 
 Create temporary job staging directory:
 ```bash
@@ -188,7 +187,6 @@ Expected JSON response:
 | :--- | :--- | :--- |
 | `/health` | `GET` | Health check reporting CUDA availability, GPU model, and active job count. |
 | `/train` | `POST` | Dispatches COLMAP + 3DGS/Triangle training from streamed frame ZIP archive. |
-| `/infer_image2splat` | `POST` | Dispatches single-photo depth-to-splat unprojection. |
 | `/status/{jobId}` | `GET` | Real-time progress percentage, stage, and completion status. |
 | `/logs/{jobId}` | `GET` | Live training logs and iteration counters. |
 | `/download/{jobId}/scene.splat` | `GET` | Binary 32-byte `.splat` scene stream. |
