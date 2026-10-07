@@ -1350,3 +1350,7 @@ cloudflared tunnel --url http://localhost:3000
     - **Removed Explanatory Paragraph**: Deleted the redundant description text block explaining cached conversions.
     - **Minimal Layout**: Kept the "⚡ FAST PIPELINE SWITCH" section header and placed the two action buttons ("Re-process as Triangle Splatting (Fast)" and "Upload New Video") directly underneath with clean, breathable spacing.
     - **Deployment**: Bumped frontend cache buster to `v=20261007_clean_reprocess_card_v35`.
+  - **Milestone 65: Nebius AI Cloud Infrastructure Verification & Documentation ([README.md](file:///Users/akif/Projects/splatris/README.md), [docs/NEBIUS_GPU_SETUP.md](file:///Users/akif/Projects/splatris/docs/NEBIUS_GPU_SETUP.md), [docs/assets/nebius_ai_cloud_vm.png](file:///Users/akif/Projects/splatris/docs/assets/nebius_ai_cloud_vm.png))**:
+    - **Hardware & Instance Verification**: Integrated high-resolution Nebius AI Cloud Console screenshot verifying instance `bronze-bug-instance-6` (`computeinstance-e00ev6ymegj3aa5hyc`), NVIDIA® L40S GPU (48 GB GDDR6), 8 vCPUs, 32 GiB RAM, and Ubuntu 24.04 LTS.
+    - **Reproduction Guide**: Created comprehensive `docs/NEBIUS_GPU_SETUP.md` with complete VM provisioning parameters, CUDA 12.4 / PyTorch setup, rasterizer kernel compilation (`TORCH_CUDA_ARCH_LIST=8.9`), and `splatris-worker.service` configuration.
+    - **README Integration**: Embedded the verified infrastructure section in `README.md` with direct link to the setup documentation.

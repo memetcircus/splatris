@@ -89,6 +89,33 @@ flowchart TD
 
 ---
 
+## ☁️ Nebius AI Cloud Infrastructure & Hardware Verification
+
+Splatris offloads photogrammetry (COLMAP Structure-from-Motion), 3D Gaussian Splatting, and single-photo depth lifting (Image2Splat) directly to an **NVIDIA® L40S GPU** instance provisioned on **Nebius AI Cloud**.
+
+<div align="center">
+  <img src="docs/assets/nebius_ai_cloud_vm.png" alt="Nebius AI Cloud L40S Compute Instance" width="900" />
+  <p><em>Verified Nebius AI Cloud Compute Instance: <code>bronze-bug-instance-6</code> with NVIDIA® L40S GPU (48 GB GDDR6).</em></p>
+</div>
+
+### 🖥️ Provisioned Nebius Instance Specifications
+
+| Parameter | Specification in Nebius AI Cloud |
+| :--- | :--- |
+| **Instance Name** | `bronze-bug-instance-6` |
+| **Instance ID** | `computeinstance-e00ev6ymegj3aa5hyc` |
+| **Project & Region** | `default-project-eu-north1` (`white-starfish-tenant-daw`) |
+| **Platform ID / Name** | `gpu-l40s-a` / **NVIDIA® L40S Intel** (Ada Lovelace) |
+| **Hardware Preset** | **1 GPU (48 GB GDDR6 VRAM), 8 vCPUs, 32 GiB System RAM** |
+| **Capacity Type** | **Preemptible** (Cost-optimized high-throughput batch compute) |
+| **Operating System** | **Ubuntu 24.04 LTS for NVIDIA® GPUs (CUDA® 13 / 12.4)** |
+| **Disk Storage** | **80.00 GiB SSD** (`boot-disk`) |
+| **Worker Service** | `splatris-worker.service` (FastAPI microservice listening on port 8000) |
+
+> 📖 **Want to reproduce this setup?** Follow our step-by-step reproduction guide: [**docs/NEBIUS_GPU_SETUP.md**](docs/NEBIUS_GPU_SETUP.md).
+
+---
+
 ## 💡 How NVIDIA Nemotron & Nebius Token Factory Accelerate Splatris
 
 1. **`nvidia/Nemotron-3-Ultra-550b-a55b` via Nebius Token Factory**:
@@ -99,8 +126,8 @@ flowchart TD
 2. **Nemotron Vision via Nebius Token Factory**:
    - Performs zero-shot object identification by projecting 3D intersection points back onto the closest camera frustum frame crop.
 
-3. **Nebius GPU Cloud**:
-   - Powers the high-performance CUDA pipeline for COLMAP Structure-from-Motion and differentiable Gaussian rasterization.
+3. **Nebius AI Cloud Dedicated GPU Compute**:
+   - Powers the high-performance CUDA pipeline for COLMAP Structure-from-Motion and differentiable Gaussian rasterization via FastAPI `splatris-worker.service`.
 
 ---
 
