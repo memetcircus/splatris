@@ -35,7 +35,7 @@
   <!-- Dedicated 3D Gaussian Splatting Engine with Cache Busting -->
   <script src="lib/gaussian-splats-3d.umd.js?v=20261003_stereo_fix"></script>
 
-  <link rel="stylesheet" href="style.css?v=20261020_analyzing_anim_v40">
+  <link rel="stylesheet" href="style.css?v=20261020_chat_height_fix_v41">
 </head>
 
 <body>
@@ -451,38 +451,13 @@
               <span class="agent-name">Spatial Audio Guide</span>
             </div>
             <div class="msg-content">
-              <p>Welcome to Splatris WebXR. Double-click anywhere on the 3D model, click <strong>Inspect 🎯</strong>, or tap a suggested inquiry below to explore history, spatial architecture, and technical specs.</p>
-              <div class="raycast-suggested-inquiries" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.08);">
-                <div style="font-weight: 600; color: #38bdf8; font-size: 0.72rem; margin-bottom: 6px; display: flex; align-items: center; gap: 4px;">
-                  <span>💡</span> Suggested Inquiries:
-                </div>
-                <div style="display: flex; flex-direction: column; gap: 5px;">
-                  <button type="button" class="raycast-query-btn" data-query="What is the combat history of this T-54/55 Main Battle Tank?">
-                    💬 What is the combat history of this T-54/55 Main Battle Tank?
-                  </button>
-                  <button type="button" class="raycast-query-btn" data-query="What are the technical armor specs of this T-54/55 Main Battle Tank?">
-                    💬 What are the technical armor specs of this T-54/55 Main Battle Tank?
-                  </button>
-                  <button type="button" class="raycast-query-btn" data-query="Why is the T-54/55 the most-produced tank in military history?">
-                    💬 Why is the T-54/55 the most-produced tank in military history?
-                  </button>
-                </div>
-              </div>
+              Welcome to Splatris WebXR. Double-click anywhere on the 3D model, click <strong>Inspect 🎯</strong>, or ask a question below to explore spatial architecture and history.
             </div>
           </div>
         </div>
 
-        <!-- Auto-Generated Suggested Inquiries (Desktop) -->
-        <div id="rag-presets" class="rag-preset-chips" style="display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px; background: rgba(0, 0, 0, 0.25); border-top: 1px solid rgba(255, 255, 255, 0.06);">
-          <div style="width: 100%; font-size: 0.70rem; color: #38bdf8; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
-            <span>💡</span> Suggested Inquiries:
-          </div>
-          <div style="display: flex; flex-wrap: wrap; gap: 6px; width: 100%;">
-            <button type="button" class="chip-query" data-query="What is the combat history of this T-54/55 Main Battle Tank?" style="padding: 4px 9px; font-size: 0.70rem; border-radius: 8px;">What is the combat history of this T-54/55 Main Battle Tank?</button>
-            <button type="button" class="chip-query" data-query="What are the technical armor specs of this T-54/55 Main Battle Tank?" style="padding: 4px 9px; font-size: 0.70rem; border-radius: 8px;">What are the technical armor specs of this T-54/55 Main Battle Tank?</button>
-            <button type="button" class="chip-query" data-query="Why is the T-54/55 the most-produced tank in military history?" style="padding: 4px 9px; font-size: 0.70rem; border-radius: 8px;">Why is the T-54/55 the most-produced tank in military history?</button>
-          </div>
-        </div>
+        <!-- Auto-Generated Suggested Inquiries (Desktop) - Populated dynamically ONLY after inspection -->
+        <div id="rag-presets" class="rag-preset-chips" style="display: none;"></div>
 
         <!-- Input Box -->
         <form id="rag-form" class="rag-input-box">
@@ -684,7 +659,7 @@
     </div>
   </footer>
 
-  <script src="app.js?v=20261020_analyzing_anim_v40"></script>
+  <script src="app.js?v=20261020_chat_height_fix_v41"></script>
 </body>
 
 </html>

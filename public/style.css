@@ -246,6 +246,23 @@ html, body {
   pointer-events: none;
 }
 
+#right-panel {
+  width: 410px;
+  max-height: calc(100vh - 130px);
+  display: flex;
+  flex-direction: column;
+}
+
+#right-panel .panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 16px;
+  gap: 10px;
+  overflow: hidden;
+}
+
 .hud-panel:hover {
   border-color: var(--border-accent);
 }
@@ -1657,18 +1674,30 @@ html, body {
 }
 
 .rag-conversation {
-  flex: 1;
-  min-height: 180px;
-  max-height: 240px;
+  flex: 1 1 auto;
+  min-height: 340px;
+  max-height: calc(100vh - 280px);
+  height: 100%;
   overflow-y: auto;
-  padding-right: 4px;
+  overflow-x: hidden;
+  padding-right: 6px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   scrollbar-width: thin;
+  scrollbar-color: rgba(56, 189, 248, 0.4) rgba(0, 0, 0, 0.25);
+  scroll-behavior: smooth;
+}
+
+.rag-preset-chips {
+  flex-shrink: 0;
+  max-height: 120px;
+  overflow-y: auto;
+  border-radius: var(--radius-sm, 8px);
 }
 
 .message {
+  flex-shrink: 0;
   padding: 10px 12px;
   border-radius: 10px;
   font-size: 0.8rem;

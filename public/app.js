@@ -4083,6 +4083,20 @@ async function speakSpatialAudio(text, position, onComplete) {
   playNextTtsSentenceInQueue();
 }
 
+function scrollChatToBottom(smooth = true) {
+  if (!chatLog) return;
+  const doScroll = () => {
+    chatLog.scrollTo({
+      top: chatLog.scrollHeight + 1000,
+      behavior: smooth ? 'smooth' : 'auto'
+    });
+  };
+  doScroll();
+  requestAnimationFrame(doScroll);
+  setTimeout(doScroll, 40);
+  setTimeout(doScroll, 160);
+}
+
 function appendChatMessage(sender, text, isExplicitAnalyzing = false) {
   const id = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
   const div = document.createElement('div');
@@ -4156,6 +4170,7 @@ function appendChatMessage(sender, text, isExplicitAnalyzing = false) {
             if (subEl) {
               subEl.textContent = stages[stageIdx];
               subEl.style.opacity = '1';
+              scrollChatToBottom();
             }
           }, 150);
         } else {
@@ -4175,7 +4190,7 @@ function appendChatMessage(sender, text, isExplicitAnalyzing = false) {
   }
 
   chatLog.appendChild(div);
-  chatLog.scrollTop = chatLog.scrollHeight;
+  scrollChatToBottom();
   return id;
 }
 
@@ -4201,7 +4216,7 @@ function updateChatMessage(id, text, sources = [], grounding = '') {
     el.appendChild(sourcesDiv);
   }
 
-  chatLog.scrollTop = chatLog.scrollHeight;
+  scrollChatToBottom();
 }
 
 // --- WebGL Viewport Screenshot & Targeted Bounding Box Extraction ---
@@ -5336,12 +5351,8 @@ function renderRaycastResult(id, result, questions = []) {
   const sources = tavily.results || tavily.sources || [];
   const displaySummary = summary || desc || `Identified ${objName} within the reconstructed 3D space.`;
 
-  // Fallback questions if empty
-  const activeQuestions = (questions && questions.length > 0) ? questions : [
-    `What is the combat history of this ${objName}?`,
-    `What are the technical armor specs of this ${objName}?`,
-    `When and where was this ${objName} produced?`
-  ];
+  // Only populate questions if Tavily grounding actually found them
+  const activeQuestions = (questions && questions.length > 0) ? questions : [];
 
   // Update Emitter Coords in the right panel DOM
   const emitterEl = document.getElementById('emitter-coords');
@@ -5399,10 +5410,14 @@ function renderRaycastResult(id, result, questions = []) {
     </div>
   `;
 
-  // Always sync suggested inquiry chips above chat input
-  updateQueryChipsForObject(objName, activeQuestions);
+  // Populate suggested inquiry chips above chat input ONLY if Tavily found questions
+  if (activeQuestions.length > 0) {
+    updateQueryChipsForObject(objName, activeQuestions);
+  } else {
+    updateQueryChipsForObject('', []);
+  }
 
-  chatLog.scrollTop = chatLog.scrollHeight;
+  scrollChatToBottom();
 }
 
 function updateQueryChipsForObject(objectName, questions = []) {
