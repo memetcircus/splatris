@@ -42,21 +42,80 @@
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      padding: 30px;
+      padding: 24px;
       overflow-x: hidden;
     }
 
-    /* Container sized for perfect 16:9 screenshot */
+    /* Container sized for perfect 16:9 recording */
     .canvas-container {
       width: 100%;
-      max-width: 1400px;
-      background: rgba(10, 15, 28, 0.85);
+      max-width: 1420px;
+      background: rgba(10, 15, 28, 0.88);
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 20px;
-      padding: 36px 44px;
+      padding: 34px 44px;
       box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 40px rgba(56, 189, 248, 0.1);
       backdrop-filter: blur(16px);
       position: relative;
+    }
+
+    /* Control Bar for triggering steps */
+    .control-bar {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 24px;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 8px 16px;
+      border-radius: 999px;
+      width: fit-content;
+      margin-left: auto;
+      margin-right: auto;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      transition: opacity 0.3s ease;
+    }
+
+    .btn-step {
+      background: rgba(255, 255, 255, 0.06);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 7px 16px;
+      border-radius: 999px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s ease;
+    }
+
+    .btn-step:hover {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--cyan);
+      transform: translateY(-1px);
+    }
+
+    .btn-step.active {
+      background: var(--cyan);
+      border-color: var(--cyan);
+      color: #04060a;
+      font-weight: 800;
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.6);
+    }
+
+    .btn-auto {
+      background: rgba(16, 185, 129, 0.2);
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #34d399;
+    }
+
+    .btn-auto:hover {
+      background: rgba(16, 185, 129, 0.4);
+      border-color: #34d399;
     }
 
     /* Header */
@@ -64,13 +123,13 @@
       display: flex;
       justify-content: space-between;
       align-items: flex-end;
-      margin-bottom: 30px;
+      margin-bottom: 26px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-      padding-bottom: 20px;
+      padding-bottom: 18px;
     }
 
     .header-left h1 {
-      font-size: 28px;
+      font-size: 27px;
       font-weight: 800;
       letter-spacing: -0.5px;
       display: flex;
@@ -84,7 +143,7 @@
     .header-left p {
       color: var(--text-muted);
       font-size: 14px;
-      margin-top: 6px;
+      margin-top: 5px;
     }
 
     .header-badges {
@@ -122,18 +181,42 @@
       display: grid;
       grid-template-columns: 1fr 1.3fr 1.1fr;
       gap: 24px;
-      margin-bottom: 24px;
+      margin-bottom: 22px;
     }
 
-    .card {
+    /* Step Card Base State */
+    .step-card {
       background: var(--card-bg);
-      border: 1px solid var(--card-border);
+      border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 14px;
       padding: 22px;
       display: flex;
       flex-direction: column;
       position: relative;
       overflow: hidden;
+      opacity: 0.22;
+      filter: grayscale(0.85);
+      transform: translateY(10px);
+      transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    /* Step Card Active / Highlighted State */
+    .step-card.active {
+      opacity: 1;
+      filter: grayscale(0);
+      transform: translateY(0);
+      border-color: var(--cyan);
+      box-shadow: 0 0 35px rgba(56, 189, 248, 0.2), inset 0 0 20px rgba(56, 189, 248, 0.05);
+    }
+
+    .step-card.step-2.active {
+      border-color: #10b981;
+      box-shadow: 0 0 35px rgba(16, 185, 129, 0.25), inset 0 0 20px rgba(16, 185, 129, 0.05);
+    }
+
+    .step-card.step-3.active {
+      border-color: #a855f7;
+      box-shadow: 0 0 35px rgba(168, 85, 247, 0.25), inset 0 0 20px rgba(168, 85, 247, 0.05);
     }
 
     .card-header {
@@ -143,18 +226,28 @@
       margin-bottom: 16px;
     }
 
-    .step-number {
-      width: 26px;
-      height: 26px;
-      border-radius: 8px;
+    .step-badge-tag {
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 4px 10px;
+      border-radius: 6px;
       background: rgba(56, 189, 248, 0.15);
       color: var(--cyan);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 12px;
-      font-weight: 800;
       border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .step-2 .step-badge-tag {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border-color: rgba(16, 185, 129, 0.3);
+    }
+
+    .step-3 .step-badge-tag {
+      background: rgba(168, 85, 247, 0.15);
+      color: #c084fc;
+      border-color: rgba(168, 85, 247, 0.3);
     }
 
     .card-title {
@@ -217,8 +310,14 @@
     .arrow-down {
       text-align: center;
       color: var(--cyan);
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
+      animation: bounce 1.8s infinite;
+    }
+
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(4px); }
     }
 
     .metric-box {
@@ -369,7 +468,7 @@
       color: var(--text-muted);
     }
 
-    /* Footer Banner */
+    /* Footer Bar */
     .footer-bar {
       display: flex;
       justify-content: space-between;
@@ -400,6 +499,16 @@
 
   <div class="canvas-container">
     
+    <!-- Control Bar (Interactive Triggers) -->
+    <div class="control-bar" id="control-bar">
+      <button class="btn-step" onclick="setStep(0)">⏮ Reset</button>
+      <button class="btn-step active" id="btn-step-1" onclick="setStep(1)">1️⃣ Step 1: Parallax</button>
+      <button class="btn-step" id="btn-step-2" onclick="setStep(2)">2️⃣ Step 2: Loop Closure</button>
+      <button class="btn-step" id="btn-step-3" onclick="setStep(3)">3️⃣ Step 3: GPU Dispatch</button>
+      <button class="btn-step btn-auto" id="btn-auto" onclick="toggleAutoPlay()">▶ Auto-Play (Paced)</button>
+      <button class="btn-step" onclick="toggleControls()" title="Hide button bar for clean recording" style="opacity: 0.7;">👁 Hide UI</button>
+    </div>
+
     <!-- Header -->
     <div class="header">
       <div class="header-left">
@@ -422,9 +531,9 @@
     <div class="grid">
       
       <!-- Panel 1: Frame Subsampling -->
-      <div class="card">
+      <div class="step-card step-1 active" id="card-1">
         <div class="card-header">
-          <div class="step-number">1</div>
+          <div class="step-badge-tag">STEP 1</div>
           <div class="card-title">Parallax Baseline Filtering</div>
         </div>
         
@@ -466,9 +575,9 @@
       </div>
 
       <!-- Panel 2: Loop Closure Comparison -->
-      <div class="card" style="border-color: rgba(16, 185, 129, 0.3);">
+      <div class="step-card step-2" id="card-2">
         <div class="card-header">
-          <div class="step-number" style="background: rgba(16, 185, 129, 0.15); color: #34d399; border-color: rgba(16, 185, 129, 0.3);">2</div>
+          <div class="step-badge-tag">STEP 2</div>
           <div class="card-title">360° Loop Closure vs. Drift Seam</div>
         </div>
 
@@ -482,7 +591,6 @@
             </div>
             <div class="orbit-visual">
               <svg class="orbit-svg" viewBox="0 0 100 100">
-                <!-- Circular arc with broken seam -->
                 <circle cx="50" cy="50" r="36" fill="none" stroke="#334155" stroke-width="4" />
                 <path d="M 50 14 A 36 36 0 1 1 30 20" fill="none" stroke="#ef4444" stroke-width="4" stroke-dasharray="4 2" />
                 <circle cx="50" cy="14" r="5" fill="#38bdf8" />
@@ -490,7 +598,7 @@
                 <line x1="50" y1="14" x2="30" y2="20" stroke="#ef4444" stroke-width="2" stroke-dasharray="2 2" />
               </svg>
               <div class="orbit-desc">
-                Only matches adjacent frames. <strong>F_end fails to connect to F_0</strong>, causing duplicate ghost geometry and split walls at the loop seam.
+                Only matches adjacent views. <strong>F_end fails to connect to F_0</strong>, causing duplicate ghost geometry and split walls at the loop seam.
               </div>
             </div>
           </div>
@@ -503,14 +611,11 @@
             </div>
             <div class="orbit-visual">
               <svg class="orbit-svg" viewBox="0 0 100 100">
-                <!-- Seamless closed circle -->
                 <circle cx="50" cy="50" r="36" fill="none" stroke="#10b981" stroke-width="4" class="pulse" />
-                <!-- Keyframe dots around circle -->
                 <circle cx="50" cy="14" r="5" fill="#38bdf8" />
                 <circle cx="86" cy="50" r="4" fill="#34d399" />
                 <circle cx="50" cy="86" r="4" fill="#34d399" />
                 <circle cx="14" cy="50" r="4" fill="#34d399" />
-                <!-- Center tank icon -->
                 <rect x="42" y="44" width="16" height="12" rx="2" fill="#38bdf8" opacity="0.6" />
                 <line x1="50" y1="44" x2="50" y2="34" stroke="#38bdf8" stroke-width="2" />
               </svg>
@@ -524,9 +629,9 @@
       </div>
 
       <!-- Panel 3: Structured JSON & Nebius Dispatch -->
-      <div class="card">
+      <div class="step-card step-3" id="card-3">
         <div class="card-header">
-          <div class="step-number">3</div>
+          <div class="step-badge-tag">STEP 3</div>
           <div class="card-title">Structured JSON & GPU Dispatch</div>
         </div>
 
@@ -559,6 +664,88 @@
     </div>
 
   </div>
+
+  <script>
+    let currentStep = 1;
+    let autoInterval = null;
+
+    function setStep(step) {
+      currentStep = step;
+      
+      const cards = [document.getElementById('card-1'), document.getElementById('card-2'), document.getElementById('card-3')];
+      const buttons = [document.getElementById('btn-step-1'), document.getElementById('btn-step-2'), document.getElementById('btn-step-3')];
+
+      cards.forEach((c, i) => {
+        if (step === 0) {
+          c.classList.remove('active');
+        } else if (i + 1 <= step) {
+          c.classList.add('active');
+        } else {
+          c.classList.remove('active');
+        }
+      });
+
+      buttons.forEach((b, i) => {
+        if (b) {
+          if (i + 1 === step) {
+            b.classList.add('active');
+          } else {
+            b.classList.remove('active');
+          }
+        }
+      });
+    }
+
+    function toggleAutoPlay() {
+      const btn = document.getElementById('btn-auto');
+      if (autoInterval) {
+        clearInterval(autoInterval);
+        autoInterval = null;
+        btn.textContent = '▶ Auto-Play (Paced)';
+        btn.style.background = '';
+      } else {
+        setStep(1);
+        btn.textContent = '⏸ Pause Auto-Play';
+        btn.style.background = 'rgba(239, 68, 68, 0.3)';
+        let next = 2;
+        autoInterval = setInterval(() => {
+          if (next > 3) {
+            clearInterval(autoInterval);
+            autoInterval = null;
+            btn.textContent = '▶ Auto-Play (Paced)';
+            btn.style.background = '';
+          } else {
+            setStep(next);
+            next++;
+          }
+        }, 6500); // 6.5s per step aligns smoothly with spoken pace
+      }
+    }
+
+    function toggleControls() {
+      const bar = document.getElementById('control-bar');
+      bar.style.display = bar.style.display === 'none' ? 'flex' : 'none';
+    }
+
+    // Keyboard controls for convenient screen recording:
+    // Space or Right Arrow: Next Step
+    // Left Arrow: Previous Step
+    // H: Toggle UI buttons for clean screenshot/recording
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (currentStep < 3) setStep(currentStep + 1);
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (currentStep > 0) setStep(currentStep - 1);
+      } else if (e.key.toLowerCase() === 'h') {
+        toggleControls();
+      }
+    });
+
+    // Start on Step 1
+    setStep(1);
+  </script>
 
 </body>
 </html>
