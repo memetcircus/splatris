@@ -32,6 +32,9 @@ let isXrHudVisibleByUser = true;
 let globalTtsGainNode = null;
 let xrHudReticleMesh = null;
 let ttsGenerationId = 0;
+let activeInspectionId = 0;
+let activeRagQueryId = 0;
+const activeBufferSources = new Set();
 let isLeftControllerTargetingHud = false;
 let isHudQuestionQuerying = false;
 let xrHudScrollOffset = 0;
@@ -927,8 +930,9 @@ async function loadChunkedTriangleMesh(url) {
 async function loadGaussianSplatScene(url, isDynamicReplacement = false) {
   const sessionId = ++activeLoadSessionId;
 
-  // Always clean up previous triangle mesh chunks
+  // Always clean up previous triangle mesh chunks and clear query presets
   disposeTriangleMeshChunks();
+  updateQueryChipsForObject('', []);
 
   // If a .chunks.bin or .ply was directly requested, check if high-fidelity .splat exists
   if (url && (url.toLowerCase().endsWith('.chunks.bin') || url.toLowerCase().endsWith('.ply'))) {
@@ -3742,6 +3746,13 @@ if (ragForm) {
 }
 
 async function submitRagQuery(query) {
+  // 1. Immediately silence and stop any ongoing guide speech or inspection voiceover
+  stopSpatialAudio();
+
+  // 2. Invalidate any in-flight inspection so it cannot speak if its response arrives later
+  activeInspectionId++;
+  const thisQueryId = ++activeRagQueryId;
+
   initSpatialAudio();
   appendChatMessage('user', query);
 
@@ -3774,6 +3785,12 @@ async function submitRagQuery(query) {
         coordinates: coords,
       }),
     });
+
+    if (thisQueryId !== activeRagQueryId) {
+      console.log(`[Splatris] Dropping outdated RAG query #${thisQueryId} (newer query #${activeRagQueryId} active)`);
+      return;
+    }
+
     if (!data.success) throw new Error(data.error || 'Failed to process RAG query');
 
     updateChatMessage(typingId, data.answer, data.sources, data.groundingUsed);
@@ -3792,10 +3809,11 @@ async function submitRagQuery(query) {
       updateSpatialEmitterPosition(pos.x || 0, pos.y || 1.2, pos.z || -2.0);
     }
 
-    if (STATE.audioEnabled) {
+    if (STATE.audioEnabled && thisQueryId === activeRagQueryId) {
       speakSpatialAudio(data.answer, data.audioSpatialPosition);
     }
   } catch (err) {
+    if (thisQueryId !== activeRagQueryId) return;
     console.error('RAG query error:', err);
     updateChatMessage(typingId, `Spatial AI Guide temporarily unavailable: ${err.message}`, []);
     if (renderer.xr && renderer.xr.isPresenting) {
@@ -4963,9 +4981,6 @@ function unlockRaycastQuery() {
   STATE.isRaycastQuerying = false;
   console.log('[Splatris] Raycast state lock released (ready for next inspection)');
 }
-
-let activeInspectionId = 0;
-
 async function triggerSpatialObjectInspection(hitPoint, screenX, screenY, explicitTargetName = null) {
   // Immediately stop any currently playing or pending audio so voices NEVER overlap!
   stopSpatialAudio();
@@ -5111,25 +5126,27 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY, explic
       point: hitPoint,
     };
 
-    // Update DOM written text in Desktop RAG panel
-    renderRaycastResult(typingId, res);
-
-    if (res.objectName) {
-      updateQueryChipsForObject(res.objectName);
-    }
-
-    // In WebXR: Update floating HUD with object name, concise summary, and 2-3 related questions
+    // Compute summary text and 2-3 auto-generated related questions
     const summaryText = res.tavilyData?.summary || res.tavilyGrounding?.summary || res.visualDescription || '';
     const objName = res.objectName || targetObjectName || 'Tank';
     let questions = [];
     if (res.tavilyData?.suggestedQuestions && res.tavilyData.suggestedQuestions.length > 0) {
       questions = res.tavilyData.suggestedQuestions.slice(0, 3);
-    } else {
+    } else if ((res.tavilyData?.success || res.tavilyGrounding?.success) && objName) {
       questions = [
         `What is the combat history of this ${objName}?`,
         `What are the technical armor specs of this ${objName}?`,
         `When and where was this ${objName} produced?`
       ];
+    }
+
+    // Update DOM written text in Desktop RAG panel
+    renderRaycastResult(typingId, res, questions);
+
+    if (questions && questions.length > 0) {
+      updateQueryChipsForObject(objName, questions);
+    } else {
+      updateQueryChipsForObject('', []);
     }
 
     // Double check that no newer scan has started before updating HUD & speaking
@@ -5165,7 +5182,7 @@ async function triggerSpatialObjectInspection(hitPoint, screenX, screenY, explic
   }
 }
 
-function renderRaycastResult(id, result) {
+function renderRaycastResult(id, result, questions = []) {
   const el = document.getElementById(id);
   if (!el) return;
 
@@ -5182,6 +5199,13 @@ function renderRaycastResult(id, result) {
   const summary = (tavily.summary || result.summary || '').trim();
   const sources = tavily.results || tavily.sources || [];
   const displaySummary = summary || desc || `Identified ${objName} within the reconstructed 3D space.`;
+
+  // Fallback questions if empty
+  const activeQuestions = (questions && questions.length > 0) ? questions : [
+    `What is the combat history of this ${objName}?`,
+    `What are the technical armor specs of this ${objName}?`,
+    `When and where was this ${objName} produced?`
+  ];
 
   // Update Emitter Coords in the right panel DOM
   const emitterEl = document.getElementById('emitter-coords');
@@ -5239,29 +5263,42 @@ function renderRaycastResult(id, result) {
     </div>
   `;
 
+  // Always sync suggested inquiry chips above chat input
+  updateQueryChipsForObject(objName, activeQuestions);
+
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
-function updateQueryChipsForObject(objectName) {
+function updateQueryChipsForObject(objectName, questions = []) {
   const chipsContainer = document.getElementById('rag-presets') || document.querySelector('.preset-chips') || document.querySelector('.rag-preset-chips');
-  if (!chipsContainer || !objectName) return;
+  if (!chipsContainer) return;
 
-  const suggestions = [
-    `Tell me about this ${objectName}`,
-    `What are the key features of this ${objectName}?`,
-    `Where was this ${objectName} manufactured?`,
-    `Estimated value and specifications of this ${objectName}`
-  ];
+  if (!objectName || !questions || questions.length === 0) {
+    chipsContainer.style.display = 'none';
+    chipsContainer.innerHTML = '';
+    return;
+  }
 
-  chipsContainer.innerHTML = suggestions.map(q => `
-    <button class="chip-query" data-query="${q}">${q}</button>
-  `).join('');
+  chipsContainer.style.display = 'flex';
+  const suggestions = questions;
+
+  chipsContainer.innerHTML = `
+    <div style="width: 100%; font-size: 0.70rem; color: #38bdf8; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
+      <span>💡</span> Suggested Inquiries:
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 6px; width: 100%;">
+      ${suggestions.map(q => `
+        <button type="button" class="chip-query" data-query="${q.replace(/"/g, '&quot;')}" style="padding: 4px 9px; font-size: 0.70rem; border-radius: 8px;">${q}</button>
+      `).join('')}
+    </div>
+  `;
 
   chipsContainer.querySelectorAll('.chip-query').forEach((chip) => {
     chip.addEventListener('click', () => {
       const q = chip.getAttribute('data-query');
       if (q) {
-        if (ragInput) ragInput.value = q;
+        const input = document.getElementById('rag-input');
+        if (input) input.value = q;
         if (typeof submitRagQuery === 'function') {
           submitRagQuery(q);
         }

@@ -1359,3 +1359,21 @@ cloudflared tunnel --url http://localhost:3000
   - **Milestone 67: Nebius GPU IP Re-Anchor (`89.169.97.126:8000`) & Cloudflare Tunnel Activation ([.env](file:///Users/akif/Projects/splatris/.env), [STEERING.md](file:///Users/akif/Projects/splatris/STEERING.md))**:
     - **GPU Endpoint Updated**: Updated `NEBIUS_GPU_ENDPOINT` to `http://89.169.97.126:8000`. Verified remote health endpoint: NVIDIA L40S GPU (44.4 GB VRAM) online with CUDA available.
     - **Local Server & Tunnel**: Started Node.js server on port 3000 and launched Cloudflare HTTPS tunnel: `https://tony-hawaiian-belly-continuously.trycloudflare.com`. Verified HTTP 200 response for recording and WebXR.
+  - **Milestone 68: Auto-Generated Inquiries in WebXR & Desktop Interfaces ([public/app.js](file:///Users/akif/Projects/splatris/public/app.js), [public/index.html](file:///Users/akif/Projects/splatris/public/index.html), [services/visionRagService.js](file:///Users/akif/Projects/splatris/services/visionRagService.js))**:
+    - **Dynamic Inquiry Generation**: Grounded in Tavily AI and Nemotron Vision object identification, the pipeline generates 3 curated, contextual questions for inspected spatial objects (e.g., combat history, technical armor specs, production timeline).
+    - **WebXR Floating HUD Card**: Added clickable inquiry chips directly onto the floating 3D raycast card in WebXR with visual pointer highlight and trigger click listeners that initiate RAG query and spatial audio voiceover.
+    - **Desktop Chat Integration**: Rendered click-to-ask inquiry buttons within the desktop identification card and dynamically populated the `#rag-presets` chips container above the chat input box.
+    - **Deployment**: Bumped frontend cache buster to `v=20261020_suggested_inquiries_v36`.
+  - **Milestone 69: Refined Suggested Inquiries & Dynamic Preset Handling ([public/app.js](file:///Users/akif/Projects/splatris/public/app.js), [public/index.html](file:///Users/akif/Projects/splatris/public/index.html))**:
+    - **Strict Grounding Condition**: Filtered inquiry generation to execute only when Tavily web grounding returns authentic matching data. If no grounded data is found, suggestions are suppressed.
+    - **Dynamic UI Cleanup**: `updateQueryChipsForObject` gracefully toggles container visibility (`display: none` / `flex`) and clears obsolete buttons when no inquiries are active, keeping the spatial chat interface clean and focused.
+    - **Deployment**: Bumped frontend cache buster to `v=20261020_suggested_inquiries_v37`.
+  - **Milestone 70: Nebius GPU IP Re-Anchor (`89.169.123.226:8000`) & Fresh Cloudflare Tunnel ([.env](file:///Users/akif/Projects/splatris/.env), [STEERING.md](file:///Users/akif/Projects/splatris/STEERING.md))**:
+    - **GPU Endpoint Updated**: Updated `NEBIUS_GPU_ENDPOINT` to `http://89.169.123.226:8000`. Verified health endpoint: NVIDIA L40S GPU (44.4 GB VRAM) online with CUDA available.
+    - **Local Server & Tunnel Re-launch**: Restarted Node.js server on port 3000 to bind new GPU endpoint and launched a fresh Cloudflare HTTPS tunnel: `https://shuttle-inexpensive-habits-powerseller.trycloudflare.com`. Verified HTTP/2 200 response for application bundle and `scene.splat` (19.3 MB Soviet T-54/55 Tank).
+  - **Milestone 71: Fix JS Syntax Error in `public/app.js` & Restore Scene Loading ([public/app.js](file:///Users/akif/Projects/splatris/public/app.js), [public/index.html](file:///Users/akif/Projects/splatris/public/index.html))**:
+    - **Root Cause Analysis**: Identified a duplicate `let activeInspectionId = 0;` declaration at line 4985 of `public/app.js` (originally declared at line 35), triggering `SyntaxError: Identifier 'activeInspectionId' has already been declared` during script parsing in browsers and preventing Three.js and Gaussian Splat viewer initialization.
+    - **Resolution**: Removed the duplicate declaration from `public/app.js`, verified syntax validation with `node --check public/app.js` (exit code 0), and bumped the cache buster in `public/index.html` to `v=20261020_syntax_fix_v38`.
+    - **Verification**: Confirmed `scene.splat` and 3D viewport load smoothly.
+
+
