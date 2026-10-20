@@ -15,3 +15,4 @@ uploads/models/*.chunks.bin
 __pycache__/
 *.pyc
 rules.txt
+STEERING.md
