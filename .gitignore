@@ -14,3 +14,4 @@ uploads/models/*.splat.bak
 uploads/models/*.chunks.bin
 __pycache__/
 *.pyc
+rules.txt
