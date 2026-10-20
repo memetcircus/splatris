@@ -743,8 +743,17 @@
       }
     });
 
-    // Start on Step 0 (all steps muted/waiting for trigger)
-    setStep(0);
+    // Check if static export or screenshot mode is requested
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('export') === 'true' || urlParams.get('static') === 'true') {
+      const bar = document.getElementById('control-bar');
+      if (bar) bar.style.display = 'none';
+      document.body.style.padding = '16px';
+      setStep(3);
+    } else {
+      // Start on Step 0 (all steps muted/waiting for trigger)
+      setStep(0);
+    }
   </script>
 
 </body>

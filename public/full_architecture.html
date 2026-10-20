@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Splatris - End-to-End System Architecture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #06080e;
+      --card-bg: rgba(13, 20, 36, 0.85);
+      --card-border: rgba(56, 189, 248, 0.22);
+      --cyan: #38bdf8;
+      --green: #10b981;
+      --emerald: #059669;
+      --purple: #a855f7;
+      --nvidia: #76b900;
+      --amber: #f59e0b;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg);
+      background-image: 
+        radial-gradient(circle at 10% 15%, rgba(56, 189, 248, 0.1) 0%, transparent 45%),
+        radial-gradient(circle at 90% 85%, rgba(118, 185, 0, 0.08) 0%, transparent 45%),
+        radial-gradient(circle at 50% 50%, rgba(168, 85, 247, 0.06) 0%, transparent 50%),
+        linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+      background-size: 100% 100%, 100% 100%, 100% 100%, 36px 36px, 36px 36px;
+      color: var(--text-main);
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 24px;
+    }
+
+    .canvas-container {
+      width: 100%;
+      max-width: 1480px;
+      background: rgba(10, 15, 28, 0.92);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 20px;
+      padding: 30px 38px;
+      box-shadow: 0 30px 70px -15px rgba(0, 0, 0, 0.8), 0 0 50px rgba(56, 189, 248, 0.12);
+      backdrop-filter: blur(20px);
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding-bottom: 18px;
+    }
+
+    .header-left h1 {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: linear-gradient(135deg, #ffffff 30%, var(--cyan) 85%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .header-left p {
+      color: var(--text-muted);
+      font-size: 13.5px;
+      margin-top: 5px;
+    }
+
+    .header-badges {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .badge {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      border: 1px solid;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .badge-nvidia {
+      background: rgba(118, 185, 0, 0.12);
+      border-color: rgba(118, 185, 0, 0.4);
+      color: #8be000;
+    }
+
+    .badge-nebius {
+      background: rgba(56, 189, 248, 0.12);
+      border-color: rgba(56, 189, 248, 0.4);
+      color: var(--cyan);
+    }
+
+    .badge-tavily {
+      background: rgba(168, 85, 247, 0.12);
+      border-color: rgba(168, 85, 247, 0.4);
+      color: #c084fc;
+    }
+
+    /* Flow Layout: 4 Core Columns with Connection Arrows */
+    .flow-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.15fr 1.15fr 1fr;
+      gap: 18px;
+      position: relative;
+      margin-bottom: 22px;
+    }
+
+    .stage-card {
+      background: var(--card-bg);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    .stage-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    .stage-1 { border-top: 3px solid var(--amber); }
+    .stage-2 { border-top: 3px solid var(--nvidia); }
+    .stage-3 { border-top: 3px solid var(--cyan); }
+    .stage-4 { border-top: 3px solid var(--purple); }
+
+    .stage-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+
+    .stage-num {
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    .stage-1 .stage-num { color: var(--amber); background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); }
+    .stage-2 .stage-num { color: #8be000; background: rgba(118, 185, 0, 0.15); border: 1px solid rgba(118, 185, 0, 0.3); }
+    .stage-3 .stage-num { color: var(--cyan); background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); }
+    .stage-4 .stage-num { color: #c084fc; background: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); }
+
+    .stage-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #fff;
+    }
+
+    /* Modules inside each card */
+    .module-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+    }
+
+    .module-box {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 8px;
+      padding: 11px 12px;
+      font-size: 11.5px;
+    }
+
+    .module-box h4 {
+      font-size: 12px;
+      font-weight: 700;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+
+    .module-box p {
+      color: var(--text-muted);
+      line-height: 1.45;
+      font-size: 11px;
+    }
+
+    .module-tag {
+      display: inline-block;
+      margin-top: 6px;
+      font-size: 10px;
+      font-family: 'Fira Code', monospace;
+      padding: 2px 7px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.06);
+      color: #e2e8f0;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .highlight-nvidia { color: #8be000; border-color: rgba(118, 185, 0, 0.3); background: rgba(118, 185, 0, 0.08); }
+    .highlight-nebius { color: var(--cyan); border-color: rgba(56, 189, 248, 0.3); background: rgba(56, 189, 248, 0.08); }
+    .highlight-tavily { color: #c084fc; border-color: rgba(168, 85, 247, 0.3); background: rgba(168, 85, 247, 0.08); }
+
+    /* Footer Banner */
+    .footer-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .footer-bar strong {
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="canvas-container">
+
+    <!-- Header -->
+    <div class="header">
+      <div class="header-left">
+        <h1>⚡ Splatris: End-to-End Autonomous Spatial AI Pipeline</h1>
+        <p>Zero-Shot Casual Video Ingestion ➔ LLM Photogrammetry Calibration ➔ Cloud Volumetric 3DGS ➔ Embodied WebXR</p>
+      </div>
+      <div class="header-badges">
+        <div class="badge badge-nvidia">🟢 NVIDIA Nemotron-3-Ultra</div>
+        <div class="badge badge-nebius">☁️ Nebius AI Cloud (L40S)</div>
+        <div class="badge badge-tavily">🔍 Tavily Grounded RAG</div>
+      </div>
+    </div>
+
+    <!-- 4-Stage Flow Pipeline -->
+    <div class="flow-grid">
+
+      <!-- STAGE 1: Ingestion & Pre-Flight -->
+      <div class="stage-card stage-1">
+        <div class="stage-header">
+          <span class="stage-num">STAGE 01</span>
+          <span class="stage-title">Ingestion & Quality Gate</span>
+        </div>
+        <div class="module-list">
+          <div class="module-box">
+            <h4>📹 Casual Capture</h4>
+            <p>Smartphones (iPhone/Android) or Meta Quest pass-through video recorded in natural room settings.</p>
+            <span class="module-tag">MP4 / WebM / 1080p-4K</span>
+          </div>
+          <div class="module-box">
+            <h4>🛡️ Pre-Flight Gatekeeper</h4>
+            <p>Laplacian blur variance audit, exposure check & velocity culling to block doomed training before GPU dispatch.</p>
+            <span class="module-tag">Blur Var > 100 • 91% Confidence</span>
+          </div>
+          <div class="module-box">
+            <h4>🔄 Frame Extraction</h4>
+            <p>Adaptive baseline subsampling extracting optimal 100–140 keyframes with 70–80% visual overlap.</p>
+            <span class="module-tag">Zero-Parallax Cull</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAGE 2: Nemotron Orchestrator -->
+      <div class="stage-card stage-2">
+        <div class="stage-header">
+          <span class="stage-num">STAGE 02</span>
+          <span class="stage-title">Nemotron Spatial Brain</span>
+        </div>
+        <div class="module-list">
+          <div class="module-box">
+            <h4>🧠 NVIDIA Nemotron-3-Ultra</h4>
+            <p>Hosted on <strong>Nebius Token Factory</strong>. Reasoned trajectory analysis and SfM solver calibration.</p>
+            <span class="module-tag highlight-nvidia">Nebius Token Factory API</span>
+          </div>
+          <div class="module-box">
+            <h4>🔄 Loop Closure Engine</h4>
+            <p>Detects 360° circular loops; enforces <code>vocab_tree</code> visual indexing to eliminate split seams and ghost artifacts.</p>
+            <span class="module-tag highlight-nvidia">Zero-Drift Loop Closure</span>
+          </div>
+          <div class="module-box">
+            <h4>📋 Structured Dispatch Plan</h4>
+            <p>Emits validated JSON configuration specifying colmap matcher, iteration counts (10k), and densification parameters.</p>
+            <span class="module-tag highlight-nvidia">JSON Schema Validation</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAGE 3: Cloud Volumetric GPU -->
+      <div class="stage-card stage-3">
+        <div class="stage-header">
+          <span class="stage-num">STAGE 03</span>
+          <span class="stage-title">Nebius GPU Training</span>
+        </div>
+        <div class="module-list">
+          <div class="module-box">
+            <h4>⚡ NVIDIA L40S GPU (48GB)</h4>
+            <p>High-throughput compute node on <strong>Nebius AI Cloud</strong> for rapid parallel point-cloud and Gaussian optimization.</p>
+            <span class="module-tag highlight-nebius">Ada Lovelace • 44.4GB Free</span>
+          </div>
+          <div class="module-box">
+            <h4>🎯 Nerfstudio Splatfacto</h4>
+            <p>Volumetric 3D Gaussian Splatting with SH degree 3 color harmonics and density pruning.</p>
+            <span class="module-tag highlight-nebius">3DGS • <90s Fast Pipeline</span>
+          </div>
+          <div class="module-box">
+            <h4>📦 Asset Streamer</h4>
+            <p>Auto-exports optimized <code>.splat</code> / <code>.ply</code> representations streamed over HTTPS/WSS to client devices.</p>
+            <span class="module-tag highlight-nebius">Cloudflare Tunnel Edge</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAGE 4: Spatial RAG & WebXR -->
+      <div class="stage-card stage-4">
+        <div class="stage-header">
+          <span class="stage-num">STAGE 04</span>
+          <span class="stage-title">Embodied WebXR & RAG</span>
+        </div>
+        <div class="module-list">
+          <div class="module-box">
+            <h4>🥽 Meta Quest 3 WebXR</h4>
+            <p>Interactive 6DoF immersion in browser. Native hand tracking, room-scale teleportation, and spatial annotations.</p>
+            <span class="module-tag highlight-tavily">Three.js + WebXR Device API</span>
+          </div>
+          <div class="module-box">
+            <h4>🔍 Tavily Grounded Spatial RAG</h4>
+            <p>3D raycasting intersects scene coordinates; fetches live verified web facts for museum/industrial assets.</p>
+            <span class="module-tag highlight-tavily">Tavily Search API</span>
+          </div>
+          <div class="module-box">
+            <h4>🎙️ Conversational Spatial AI</h4>
+            <p>Voice-guided AI persona with Web Audio TTS delivering situated spatial narratives directly in XR.</p>
+            <span class="module-tag highlight-tavily">Web Audio TTS • 3D Hotspots</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer Bar -->
+    <div class="footer-bar">
+      <span>Architectural Invariant: <strong>Autonomic Closed-Loop Spatial Synthesis (Raw Video ➔ Interactive 6DoF XR)</strong></span>
+      <span>Compute: <strong>Nebius AI Cloud (NVIDIA L40S 48GB GPU)</strong></span>
+      <span>Orchestrator: <strong>NVIDIA Nemotron-3-Ultra on Nebius Token Factory</strong></span>
+    </div>
+
+  </div>
+
+</body>
+</html>
