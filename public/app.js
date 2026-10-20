@@ -4083,22 +4083,95 @@ async function speakSpatialAudio(text, position, onComplete) {
   playNextTtsSentenceInQueue();
 }
 
-function appendChatMessage(sender, text) {
+function appendChatMessage(sender, text, isExplicitAnalyzing = false) {
   const id = 'msg-' + Date.now() + '-' + Math.random().toString(36).substr(2, 5);
   const div = document.createElement('div');
   div.id = id;
-  div.className = `message ${sender}-msg`;
+
+  const isAnalyzing = isExplicitAnalyzing || (sender === 'agent' && (
+    text.toLowerCase().includes('analyzing') ||
+    text.toLowerCase().includes('processing:') ||
+    text.toLowerCase().includes('querying tavily') ||
+    text.toLowerCase().includes('scanning')
+  ));
+
+  div.className = `message ${sender}-msg${isAnalyzing ? ' is-analyzing' : ''}`;
 
   if (sender === 'user') {
     div.textContent = text;
   } else {
-    div.innerHTML = `
-      <div class="msg-header">
-        <span class="agent-avatar">AI</span>
-        <span class="agent-name">Spatial Audio Guide</span>
-      </div>
-      <div class="msg-content">${text}</div>
-    `;
+    if (isAnalyzing) {
+      // Strip trailing punctuation / dots for clean presentation
+      const cleanLabel = text.replace(/[.·…]+$/, '').trim();
+      div.innerHTML = `
+        <div class="msg-header">
+          <span class="agent-avatar">AI</span>
+          <span class="agent-name">Spatial Audio Guide</span>
+        </div>
+        <div class="msg-content">
+          <div class="analyzing-card">
+            <div class="analyzing-top-bar">
+              <div class="analyzing-spinner-wrap">
+                <span class="analyzing-pulse-ring"></span>
+                <span class="analyzing-core-dot"></span>
+              </div>
+              <span class="analyzing-badge">TAVILY GROUNDING ACTIVE</span>
+            </div>
+            <div class="analyzing-text-row">
+              <span class="analyzing-label-text">${cleanLabel}</span>
+              <span class="analyzing-wave-dots" aria-hidden="true">
+                <span class="dot d1">.</span>
+                <span class="dot d2">.</span>
+                <span class="dot d3">.</span>
+                <span class="dot d4">.</span>
+                <span class="dot d5">.</span>
+              </span>
+            </div>
+            <div class="analyzing-laser-track">
+              <div class="analyzing-laser-beam"></div>
+            </div>
+            <div class="analyzing-substep-row">
+              <span class="analyzing-substep-icon">⚡</span>
+              <span class="analyzing-substep-text" id="${id}-substep">Connecting to Tavily search grounding & verified archives...</span>
+            </div>
+          </div>
+        </div>
+      `;
+
+      // Active dynamic progress substep cycler
+      if (!window.__analyzingTimers) window.__analyzingTimers = {};
+      const stages = [
+        'Connecting to Tavily search grounding & verified archives...',
+        'Cross-referencing technical specifications & combat history...',
+        'Synthesizing spatial knowledge with Nemotron 3 Ultra...',
+        'Compiling spatial voiceover & 3D audio emitter coordinates...'
+      ];
+      let stageIdx = 0;
+      window.__analyzingTimers[id] = setInterval(() => {
+        stageIdx = (stageIdx + 1) % stages.length;
+        const subEl = document.getElementById(`${id}-substep`);
+        if (subEl) {
+          subEl.style.opacity = '0.3';
+          setTimeout(() => {
+            if (subEl) {
+              subEl.textContent = stages[stageIdx];
+              subEl.style.opacity = '1';
+            }
+          }, 150);
+        } else {
+          clearInterval(window.__analyzingTimers[id]);
+          delete window.__analyzingTimers[id];
+        }
+      }, 1800);
+    } else {
+      div.innerHTML = `
+        <div class="msg-header">
+          <span class="agent-avatar">AI</span>
+          <span class="agent-name">Spatial Audio Guide</span>
+        </div>
+        <div class="msg-content">${text}</div>
+      `;
+    }
   }
 
   chatLog.appendChild(div);
@@ -4109,6 +4182,12 @@ function appendChatMessage(sender, text) {
 function updateChatMessage(id, text, sources = [], grounding = '') {
   const el = document.getElementById(id);
   if (!el) return;
+
+  if (window.__analyzingTimers && window.__analyzingTimers[id]) {
+    clearInterval(window.__analyzingTimers[id]);
+    delete window.__analyzingTimers[id];
+  }
+  el.classList.remove('is-analyzing');
 
   const contentEl = el.querySelector('.msg-content');
   if (contentEl) {
@@ -4755,11 +4834,30 @@ function selectXRQuestion(index) {
   stopSpatialAudio();
   activeInspectionId++;
 
+  let dotCount = 1;
+  const baseStatus = `Analyzing: "${q}" with Nemotron & Tavily`;
+  if (window.__hudAnimTimer) clearInterval(window.__hudAnimTimer);
+  window.__hudAnimTimer = setInterval(() => {
+    if (!isHudQuestionQuerying) {
+      clearInterval(window.__hudAnimTimer);
+      window.__hudAnimTimer = null;
+      return;
+    }
+    dotCount = (dotCount % 5) + 1;
+    const dots = '.'.repeat(dotCount);
+    updateXRHUDContent({
+      title: (STATE.lastInspectedObject?.objectName || 'SPATIAL RAG').toUpperCase(),
+      subtitle: q,
+      status: `${baseStatus} ${dots}`,
+      questions: lastHudContent.questions,
+    });
+  }, 350);
+
   // Update HUD text immediately to indicate query in progress
   updateXRHUDContent({
     title: (STATE.lastInspectedObject?.objectName || 'SPATIAL RAG').toUpperCase(),
     subtitle: q,
-    status: `Analyzing: "${q}" with Nemotron & Tavily...`,
+    status: `${baseStatus} .`,
     questions: lastHudContent.questions,
   });
 
@@ -4769,6 +4867,10 @@ function selectXRQuestion(index) {
     if (isHudQuestionQuerying) {
       console.warn('[WebXR] Watchdog: auto-unlocking HUD questions after timeout');
       isHudQuestionQuerying = false;
+      if (window.__hudAnimTimer) {
+        clearInterval(window.__hudAnimTimer);
+        window.__hudAnimTimer = null;
+      }
       updateXRHUDContent();
     }
   }, 20000);
@@ -4779,6 +4881,10 @@ function selectXRQuestion(index) {
     })
     .finally(() => {
       isHudQuestionQuerying = false;
+      if (window.__hudAnimTimer) {
+        clearInterval(window.__hudAnimTimer);
+        window.__hudAnimTimer = null;
+      }
       if (window.__hudQuestionLockTimer) clearTimeout(window.__hudQuestionLockTimer);
       updateXRHUDContent();
     });
@@ -4942,17 +5048,37 @@ async function performRaycastSelectionXR(origin, direction) {
 
     const targetName = getSpatialTargetName(hitMesh);
 
-    // Immediate Raycast Visual Feedback on HUD:
+    // Immediate Raycast Visual Feedback on HUD with animated dots:
+    let scanDotCount = 1;
+    const baseScan = `Scanning ${targetName}... Fetching data from Tavily`;
+    if (window.__xrScanTimer) clearInterval(window.__xrScanTimer);
+    window.__xrScanTimer = setInterval(() => {
+      if (!STATE.isRaycastQuerying) {
+        clearInterval(window.__xrScanTimer);
+        window.__xrScanTimer = null;
+        return;
+      }
+      scanDotCount = (scanDotCount % 5) + 1;
+      const dots = '.'.repeat(scanDotCount);
+      updateXRHUDContent({
+        status: `${baseScan} ${dots}`,
+      });
+    }, 350);
+
     updateXRHUDContent({
       title: 'SCANNING OBJECT...',
       subtitle: hitPoint ? `Target Hit [${hitPoint.x.toFixed(2)}, ${hitPoint.y.toFixed(2)}, ${hitPoint.z.toFixed(2)}]` : 'Raycast Registered',
-      status: `Scanning ${targetName}... Fetching data from Tavily.`,
+      status: `${baseScan} .`,
       questions: [],
     });
 
     await triggerSpatialObjectInspection(hitPoint, null, null, targetName);
   } catch (err) {
     console.error('[Splatris] performRaycastSelectionXR error:', err);
+    if (window.__xrScanTimer) {
+      clearInterval(window.__xrScanTimer);
+      window.__xrScanTimer = null;
+    }
     updateXRHUDContent({
       title: 'ERROR: SCAN FAILED',
       subtitle: 'Inspection Error',
@@ -4974,6 +5100,10 @@ function lockRaycastQuery() {
 }
 
 function unlockRaycastQuery() {
+  if (window.__xrScanTimer) {
+    clearInterval(window.__xrScanTimer);
+    window.__xrScanTimer = null;
+  }
   if (raycastLockTimeout) {
     clearTimeout(raycastLockTimeout);
     raycastLockTimeout = null;
@@ -5186,6 +5316,12 @@ function renderRaycastResult(id, result, questions = []) {
   const el = document.getElementById(id);
   if (!el) return;
 
+  if (window.__analyzingTimers && window.__analyzingTimers[id]) {
+    clearInterval(window.__analyzingTimers[id]);
+    delete window.__analyzingTimers[id];
+  }
+  el.classList.remove('is-analyzing');
+
   const contentEl = el.querySelector('.msg-content');
   if (!contentEl) return;
 
@@ -5306,6 +5442,21 @@ function updateQueryChipsForObject(objectName, questions = []) {
     });
   });
 }
+
+// Global Click Delegation for Suggested Inquiries in Chat, Greeting Card, or Presets
+document.addEventListener('click', (e) => {
+  const queryBtn = e.target.closest('.raycast-query-btn, .chip-query');
+  if (queryBtn) {
+    const q = queryBtn.getAttribute('data-query');
+    if (q) {
+      const input = document.getElementById('rag-input');
+      if (input) input.value = q;
+      if (typeof submitRagQuery === 'function') {
+        submitRagQuery(q);
+      }
+    }
+  }
+});
 
 // Double-Click on 3D Viewport to inspect object
 renderer.domElement.addEventListener('dblclick', (event) => {

@@ -1628,6 +1628,26 @@ html, body {
   color: #e9d5ff;
 }
 
+.raycast-query-btn {
+  text-align: left;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 0.72rem;
+  color: #e0f2fe;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.raycast-query-btn:hover {
+  background: rgba(56, 189, 248, 0.2);
+  border-color: #38bdf8;
+  color: #ffffff;
+  transform: translateX(2px);
+  box-shadow: 0 0 12px rgba(56, 189, 248, 0.25);
+}
+
 /* Chat Conversation (Selectable Text Enabled) */
 .rag-conversation,
 .rag-conversation * {
@@ -1709,6 +1729,200 @@ html, body {
   font-size: 0.68rem;
   color: var(--text-dim);
   cursor: text;
+}
+
+/* --- Animated Tavily Analyzing / Grounding State --- */
+.message.is-analyzing {
+  background: rgba(14, 165, 233, 0.08) !important;
+  border: 1px solid rgba(56, 189, 248, 0.45) !important;
+  box-shadow: 0 0 18px rgba(56, 189, 248, 0.15) !important;
+  animation: analyzingCardPulse 2.4s ease-in-out infinite alternate !important;
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes analyzingCardPulse {
+  0% {
+    border-color: rgba(56, 189, 248, 0.3);
+    box-shadow: 0 0 10px rgba(56, 189, 248, 0.1);
+  }
+  100% {
+    border-color: rgba(56, 189, 248, 0.7);
+    box-shadow: 0 0 24px rgba(56, 189, 248, 0.28);
+  }
+}
+
+.analyzing-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 4px 0;
+}
+
+.analyzing-top-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.analyzing-spinner-wrap {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.analyzing-core-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 8px #38bdf8;
+}
+
+.analyzing-pulse-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 1.5px solid #38bdf8;
+  animation: analyzingRingExpand 1.5s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+
+@keyframes analyzingRingExpand {
+  0% {
+    transform: scale(0.6);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.analyzing-badge {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.12);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+.analyzing-text-row {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #f0f9ff;
+  line-height: 1.35;
+}
+
+.analyzing-label-text {
+  background: linear-gradient(90deg, #f0f9ff 0%, #38bdf8 45%, #93c5fd 75%, #f0f9ff 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: analyzingTextShimmer 2.5s linear infinite;
+}
+
+@keyframes analyzingTextShimmer {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.analyzing-wave-dots {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 1.5px;
+  margin-left: 2px;
+}
+
+.analyzing-wave-dots .dot {
+  display: inline-block;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #38bdf8;
+  animation: waveDotBounce 1.4s ease-in-out infinite;
+}
+
+.analyzing-wave-dots .d1 { animation-delay: 0.0s; }
+.analyzing-wave-dots .d2 { animation-delay: 0.15s; }
+.analyzing-wave-dots .d3 { animation-delay: 0.30s; }
+.analyzing-wave-dots .d4 { animation-delay: 0.45s; }
+.analyzing-wave-dots .d5 { animation-delay: 0.60s; }
+
+@keyframes waveDotBounce {
+  0%, 80%, 100% {
+    transform: translateY(0);
+    opacity: 0.3;
+    color: #38bdf8;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+    color: #ffffff;
+    text-shadow: 0 0 10px #38bdf8, 0 0 16px rgba(56, 189, 248, 0.8);
+  }
+}
+
+.analyzing-laser-track {
+  width: 100%;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+  position: relative;
+  margin-top: 2px;
+}
+
+.analyzing-laser-beam {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 40%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent 0%, #38bdf8 50%, #67e8f9 100%);
+  border-radius: 999px;
+  box-shadow: 0 0 8px #38bdf8;
+  animation: laserGlide 1.8s ease-in-out infinite;
+}
+
+@keyframes laserGlide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+.analyzing-substep-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.70rem;
+  color: #94a3b8;
+  margin-top: 2px;
+  transition: opacity 0.3s ease;
+}
+
+.analyzing-substep-icon {
+  color: #facc15;
+  font-size: 0.75rem;
+  animation: substepPulse 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes substepPulse {
+  0% { transform: scale(0.9); opacity: 0.7; }
+  100% { transform: scale(1.15); opacity: 1; }
 }
 
 /* RAG Glassmorphic Input Box */
