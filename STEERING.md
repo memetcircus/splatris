@@ -21,8 +21,8 @@ The platform encompasses three interconnected tiers:
 | **Local Orchestrator** | **Apple Mac mini (M4)** | Apple Silicon (ARM64 architecture) providing local development, FFmpeg frame extraction, and WebXR orchestration host. |
 | **Local Operating System** | macOS (Darwin ARM64) | Native Unix environment with zsh shell and Node.js v24+. |
 | **Media Acceleration** | Apple Silicon VideoToolbox / NEON | Homebrew FFmpeg 8.1.2 compiled with NEON / VideoToolbox acceleration for 2 FPS frame extraction. |
-| **Remote GPU Cluster** | **Nebius NVIDIA L40S (46GB VRAM)** | High-throughput Ada Lovelace GPU instance (`89.169.112.102`) running Ubuntu 24.04, Driver 580.173, CUDA 13.0. |
-| **Remote Worker Service** | FastAPI Worker Microservice | Dedicated Python service on port 8000 managed via `nohup` / `systemd` executing COLMAP SfM and Nerfstudio Splatfacto 3DGS CUDA training. |
+| **Remote GPU Cluster** | **Nebius NVIDIA L40S (44.4GB VRAM)** | High-throughput Ada Lovelace GPU instance (`89.169.123.226`) running Ubuntu 24.04, Driver 550.120, CUDA 12.4. |
+| **Remote Worker Service** | FastAPI Worker Microservice | Dedicated Python service on port 8000 managed via `systemd` (`splatris-worker.service`) executing COLMAP SfM and Nerfstudio Splatfacto 3DGS CUDA training. |
 | **3D Client Performance** | **72–75 FPS** | Verified real-time rendering of authentic 359,000+ Gaussian splats via WebGL / Three.js on M4 GPU and Meta Quest 3 native 72/75Hz display. |
 
 ---
@@ -32,7 +32,7 @@ The platform encompasses three interconnected tiers:
 | Layer / Concern | Technology | Implementation & Status |
 | :--- | :--- | :--- |
 | **Local Host Platform** | Apple Mac mini (M4) | ARM64 architecture, local development & orchestration host. |
-| **Remote GPU Instance** | Nebius NVIDIA L40S (46GB VRAM) | Dedicated remote compute host (`89.169.112.102:8000`) for COLMAP and 3DGS training. |
+| **Remote GPU Instance** | Nebius NVIDIA L40S (44.4GB VRAM) | Dedicated remote compute host (`89.169.123.226:8000`) for COLMAP and 3DGS training. |
 | **Runtime** | Node.js (v24+) | Native ES Modules (`"type": "module"`). |
 | **Web Framework** | Express 5.x (`express@^5.2.1`) | High-performance routing, JSON/URL-encoded middleware, CORS, static file delivery (`public/`, `uploads/`). |
 | **AI Inference Gateway** | Nebius Token Factory (`openai@^7.20.0`) | Official OpenAI SDK configured with baseURL `https://api.tokenfactory.nebius.com/v1`. |
