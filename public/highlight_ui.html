@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Splatris UI Highlighted Overview</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #080b12;
+      font-family: 'Inter', -apple-system, sans-serif;
+      color: #f8fafc;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .wrapper {
+      max-width: 1320px;
+      width: 100%;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      padding: 26px 30px;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.8), 0 0 40px rgba(56, 189, 248, 0.1);
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 14px;
+    }
+    .header h2 {
+      font-size: 22px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff 40%, #38bdf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header span {
+      font-size: 13px;
+      color: #94a3b8;
+    }
+
+    /* Relative Screenshot Stage */
+    .screenshot-stage {
+      position: relative;
+      width: 100%;
+      border-radius: 12px;
+      overflow: hidden;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+      margin-bottom: 22px;
+    }
+    .screenshot-img {
+      width: 100%;
+      display: block;
+    }
+
+    /* Highlight Overlay Box */
+    .highlight-box {
+      position: absolute;
+      border-radius: 8px;
+      pointer-events: none;
+      transition: all 0.3s ease;
+    }
+    .box-1 { /* Status Bar */
+      top: 1.5%; left: 70%; width: 26%; height: 7%;
+      border: 2px solid #10b981;
+      background: rgba(16, 185, 129, 0.12);
+      box-shadow: 0 0 18px rgba(16, 185, 129, 0.45);
+    }
+    .box-2 { /* Space Ingestion */
+      top: 9%; left: 1%; width: 19%; height: 85%;
+      border: 2px solid #38bdf8;
+      background: rgba(56, 189, 248, 0.08);
+      box-shadow: 0 0 18px rgba(56, 189, 248, 0.35);
+    }
+    .box-3 { /* 3D Viewport */
+      top: 9%; left: 21%; width: 56%; height: 85%;
+      border: 2px solid #f59e0b;
+      background: rgba(245, 158, 11, 0.04);
+      box-shadow: 0 0 20px rgba(245, 158, 11, 0.25);
+    }
+    .box-4 { /* Spatial Audio RAG */
+      top: 9%; left: 78%; width: 21%; height: 85%;
+      border: 2px solid #a855f7;
+      background: rgba(168, 85, 247, 0.08);
+      box-shadow: 0 0 18px rgba(168, 85, 247, 0.35);
+    }
+
+    /* Callout Badge Numbers */
+    .badge-callout {
+      position: absolute;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      color: #fff;
+      font-weight: 800;
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.8);
+      z-index: 10;
+    }
+    .b-1 { top: 0.5%; left: 68.5%; background: #10b981; }
+    .b-2 { top: 8%; left: 0%; background: #38bdf8; }
+    .b-3 { top: 8%; left: 20%; background: #f59e0b; }
+    .b-4 { top: 8%; left: 77%; background: #a855f7; }
+
+    /* Legend Grid */
+    .legend-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+    .legend-item {
+      background: rgba(0, 0, 0, 0.35);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px;
+      padding: 14px 16px;
+    }
+    .item-1 { border-top: 3px solid #10b981; }
+    .item-2 { border-top: 3px solid #38bdf8; }
+    .item-3 { border-top: 3px solid #f59e0b; }
+    .item-4 { border-top: 3px solid #a855f7; }
+
+    .legend-header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .legend-pill {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      font-size: 11px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+    }
+    .legend-item p {
+      font-size: 11.5px;
+      color: #94a3b8;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="wrapper">
+    <div class="header">
+      <h2>⚡ Splatris Web App Interface & Architectural Hotspots</h2>
+      <span>Zero-Shot Spatial Ingestion, 3DGS Rendering & Embodied Spatial RAG</span>
+    </div>
+
+    <div class="screenshot-stage">
+      <img src="/media/ui_standard_3dgs.png" class="screenshot-img" alt="Splatris UI Overview">
+      
+      <!-- Highlight Boxes -->
+      <div class="highlight-box box-1"></div>
+      <div class="highlight-box box-2"></div>
+      <div class="highlight-box box-3"></div>
+      <div class="highlight-box box-4"></div>
+
+      <!-- Badges -->
+      <div class="badge-callout b-1">1</div>
+      <div class="badge-callout b-2">2</div>
+      <div class="badge-callout b-3">3</div>
+      <div class="badge-callout b-4">4</div>
+    </div>
+
+    <!-- Explanation Legend -->
+    <div class="legend-grid">
+      <div class="legend-item item-1">
+        <div class="legend-header">
+          <span class="legend-pill" style="background:#10b981">1</span>
+          <span>Status & Orchestrator</span>
+        </div>
+        <p>Live Nebius NVIDIA L40S GPU instance heartbeat, active NVIDIA Nemotron-3-Ultra orchestrator, and instant <strong>Enter WebXR</strong> trigger for Meta Quest 3.</p>
+      </div>
+
+      <div class="legend-item item-2">
+        <div class="legend-header">
+          <span class="legend-pill" style="background:#38bdf8">2</span>
+          <span>Ingestion & Dual Pipeline</span>
+        </div>
+        <p>Drag-and-drop casual video upload (30-60s), dual training selector (Standard 3DGS vs Triangle Mesh), and pre-flight blur/velocity quality audit.</p>
+      </div>
+
+      <div class="legend-item item-3">
+        <div class="legend-header">
+          <span class="legend-pill" style="background:#f59e0b">3</span>
+          <span>Interactive 3D Viewport</span>
+        </div>
+        <p>6DoF volumetric Gaussian Splat renderer with real-time controls (Orbit, Turntable, 3-Axis Free), active splat counter (<strong>804,586 Gaussians</strong>), and FPS tracking.</p>
+      </div>
+
+      <div class="legend-item item-4">
+        <div class="legend-header">
+          <span class="legend-pill" style="background:#a855f7">4</span>
+          <span>Spatial Audio RAG</span>
+        </div>
+        <p>AI spatial guide combining <strong>Tavily Search API</strong> grounding and Web Audio TTS. Double-click 3D objects to ask situated historical or technical questions.</p>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>

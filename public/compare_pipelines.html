@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Splatris Dual-Pipeline & Fast Switch Comparison</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #080b12;
+      font-family: 'Inter', -apple-system, sans-serif;
+      color: #f8fafc;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    .wrapper {
+      max-width: 1360px;
+      width: 100%;
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 18px;
+      padding: 24px 28px;
+      box-shadow: 0 25px 60px rgba(0,0,0,0.8), 0 0 40px rgba(56, 189, 248, 0.1);
+    }
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      padding-bottom: 14px;
+    }
+    .header h2 {
+      font-size: 21px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #fff 40%, #38bdf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .header span {
+      font-size: 13px;
+      color: #94a3b8;
+    }
+
+    /* Comparison Grid */
+    .compare-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+    .compare-card {
+      background: rgba(0, 0, 0, 0.4);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+    .card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      background: rgba(255, 255, 255, 0.04);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .card-top h3 {
+      font-size: 14px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pill {
+      font-size: 10px;
+      font-family: 'Fira Code', monospace;
+      padding: 3px 8px;
+      border-radius: 999px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+    .pill-blue { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
+    .pill-purple { background: rgba(168, 85, 247, 0.15); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.3); }
+
+    .img-wrap {
+      width: 100%;
+      height: 290px;
+      overflow: hidden;
+      position: relative;
+    }
+    .img-wrap img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: 50% 45%;
+    }
+    .card-bottom {
+      padding: 12px 16px;
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.45;
+      border-top: 1px solid rgba(255, 255, 255, 0.06);
+    }
+    .card-bottom strong { color: #f8fafc; }
+
+    /* Bottom Highlight: Fast Pipeline Switch */
+    .switch-banner {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.12) 0%, rgba(168, 85, 247, 0.15) 100%);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+    .switch-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .switch-icon {
+      font-size: 28px;
+      background: rgba(255, 255, 255, 0.1);
+      width: 52px;
+      height: 52px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .switch-text h4 {
+      font-size: 15px;
+      font-weight: 700;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+    .switch-text p {
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.4;
+    }
+    .switch-crop {
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+      flex-shrink: 0;
+    }
+    .switch-crop img {
+      display: block;
+      height: 72px;
+      width: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="wrapper">
+    <div class="header">
+      <h2>⚡ Splatris Dual Reconstruction & Zero-Overhead Fast Switching</h2>
+      <span>Comparing Nerfstudio Volumetric Splats vs Differentiable Triangle Splatting</span>
+    </div>
+
+    <!-- Dual Comparison Grid -->
+    <div class="compare-grid">
+      <!-- Standard 3DGS -->
+      <div class="compare-card">
+        <div class="card-top">
+          <h3><span>🔷</span> Standard 3DGS (Nerfstudio Splatfacto)</h3>
+          <span class="pill pill-blue">804,586 Gaussians • 16.5 MB</span>
+        </div>
+        <div class="img-wrap">
+          <img src="/media/ui_standard_3dgs.png" alt="Standard 3DGS">
+        </div>
+        <div class="card-bottom">
+          <strong>Full Volumetric Photorealism:</strong> Captures complex high-frequency specular reflections, fine tank tracks, and ambient shadows. Perfect for desktop inspection and high-fidelity archival.
+        </div>
+      </div>
+
+      <!-- Triangle Mesh Splatting -->
+      <div class="compare-card">
+        <div class="card-top">
+          <h3><span>🟣</span> Triangle Splatting (Differentiable Mesh)</h3>
+          <span class="pill pill-purple">545,087 Gaussians • 16.0 MB</span>
+        </div>
+        <div class="img-wrap">
+          <img src="/media/ui_triangle_mesh.png" alt="Triangle Splatting">
+        </div>
+        <div class="card-bottom">
+          <strong>WebXR & Mobile Optimized:</strong> Structured planar surface topology for rapid rasterization on standalone headsets like <strong>Meta Quest 3</strong>, delivering sustained 72-90 FPS in 6DoF.
+        </div>
+      </div>
+    </div>
+
+    <!-- Fast Switch Banner with Cropped Image 3 -->
+    <div class="switch-banner">
+      <div class="switch-left">
+        <div class="switch-icon">⚡</div>
+        <div class="switch-text">
+          <h4>Zero-Overhead Fast Pipeline Switch (&lt;90 Seconds)</h4>
+          <p>Because Nemotron-3-Ultra pre-indexes keyframes and camera poses once, users can switch between <strong>Triangle Mesh</strong> and <strong>Standard 3DGS</strong> instantly without re-running expensive COLMAP photogrammetry.</p>
+        </div>
+      </div>
+      <div style="background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(56, 189, 248, 0.4); border-radius: 10px; padding: 12px 18px; display: flex; flex-direction: column; gap: 8px; flex-shrink: 0; min-width: 250px;">
+        <span style="font-size: 10px; font-weight: 800; letter-spacing: 0.8px; color: #38bdf8; text-transform: uppercase;">⚡ FAST PIPELINE SWITCH</span>
+        <div style="background: linear-gradient(135deg, #6366f1 0%, #3b82f6 100%); color: #fff; font-size: 12px; font-weight: 700; padding: 8px 14px; border-radius: 8px; display: flex; align-items: center; gap: 8px; box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);">
+          <span>⚡</span> Re-process as Standard 3DGS (Fast)
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>
