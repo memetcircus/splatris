@@ -3745,7 +3745,21 @@ if (ragForm) {
   });
 }
 
+let lastSubmittedRagQuery = '';
+let lastSubmittedRagTime = 0;
+
 async function submitRagQuery(query) {
+  const cleanQ = (query || '').trim();
+  if (!cleanQ) return;
+
+  const now = performance.now();
+  if (cleanQ.toLowerCase() === lastSubmittedRagQuery.toLowerCase() && (now - lastSubmittedRagTime) < 1000) {
+    console.warn('[Splatris] Debounced duplicate RAG query submission:', cleanQ);
+    return;
+  }
+  lastSubmittedRagQuery = cleanQ;
+  lastSubmittedRagTime = now;
+
   // 1. Immediately silence and stop any ongoing guide speech or inspection voiceover
   stopSpatialAudio();
 
@@ -3754,7 +3768,7 @@ async function submitRagQuery(query) {
   const thisQueryId = ++activeRagQueryId;
 
   initSpatialAudio();
-  appendChatMessage('user', query);
+  appendChatMessage('user', cleanQ);
 
   const typingId = appendChatMessage('agent', 'Analyzing 3D spatial scene & querying grounding sources...');
 
@@ -5420,7 +5434,70 @@ function renderRaycastResult(id, result, questions = []) {
   scrollChatToBottom();
 }
 
-function updateQueryChipsForObject(objectName, questions = []) {
+// Active Suggested Inquiries Pool & State Management
+let activeInquiryPool = [];
+let activeDisplayedInquiries = [];
+let askedInquiryHistory = new Set();
+
+function initObjectQuestionPool(objectName, initialQuestions = []) {
+  askedInquiryHistory.clear();
+  const name = objectName || 'Object';
+  const basePool = [
+    ...(initialQuestions || []),
+    `What are the historical origins and design significance of ${name}?`,
+    `What materials and engineering techniques are typically used in ${name}?`,
+    `What are the technical armor and combat specifications of ${name}?`,
+    `When and where was ${name} primarily produced or deployed?`,
+    `What makes the structural engineering of ${name} unique?`,
+    `What key historical events or battles is ${name} famous for?`,
+    `How can I best view the geometry and details of this 3D scan?`,
+    `How does ${name} compare to similar spatial designs of its era?`
+  ];
+
+  const seen = new Set();
+  activeInquiryPool = [];
+  for (const q of basePool) {
+    const trimmed = (q || '').trim();
+    if (trimmed && !seen.has(trimmed.toLowerCase())) {
+      seen.add(trimmed.toLowerCase());
+      activeInquiryPool.push(trimmed);
+    }
+  }
+
+  activeDisplayedInquiries = activeInquiryPool.slice(0, 3);
+  renderQueryChips(name, activeDisplayedInquiries);
+}
+
+function onSuggestedInquirySelected(chosenQuestion) {
+  const norm = (chosenQuestion || '').trim().toLowerCase();
+  askedInquiryHistory.add(norm);
+
+  // Find next unasked candidate from pool that is not currently displayed
+  const currentDisplayedNorms = new Set(activeDisplayedInquiries.map(x => x.trim().toLowerCase()));
+  const nextCandidate = activeInquiryPool.find(
+    cand => !askedInquiryHistory.has(cand.trim().toLowerCase()) && !currentDisplayedNorms.has(cand.trim().toLowerCase())
+  );
+
+  const idx = activeDisplayedInquiries.findIndex(x => x.trim().toLowerCase() === norm);
+  if (idx !== -1) {
+    if (nextCandidate) {
+      activeDisplayedInquiries[idx] = nextCandidate;
+    } else {
+      activeDisplayedInquiries.splice(idx, 1);
+    }
+  }
+
+  const objName = STATE.lastInspectedObject?.objectName || 'Object';
+  renderQueryChips(objName, activeDisplayedInquiries);
+
+  // Also sync to WebXR HUD if in VR
+  if (typeof updateXRHUDContent === 'function' && lastHudContent) {
+    lastHudContent.questions = [...activeDisplayedInquiries];
+    updateXRHUDContent();
+  }
+}
+
+function renderQueryChips(objectName, questions = []) {
   const chipsContainer = document.getElementById('rag-presets') || document.querySelector('.preset-chips') || document.querySelector('.rag-preset-chips');
   if (!chipsContainer) return;
 
@@ -5431,39 +5508,40 @@ function updateQueryChipsForObject(objectName, questions = []) {
   }
 
   chipsContainer.style.display = 'flex';
-  const suggestions = questions;
-
   chipsContainer.innerHTML = `
     <div style="width: 100%; font-size: 0.70rem; color: #38bdf8; font-weight: 700; margin-bottom: 4px; display: flex; align-items: center; gap: 4px;">
       <span>💡</span> Suggested Inquiries:
     </div>
     <div style="display: flex; flex-wrap: wrap; gap: 6px; width: 100%;">
-      ${suggestions.map(q => `
+      ${questions.map(q => `
         <button type="button" class="chip-query" data-query="${q.replace(/"/g, '&quot;')}" style="padding: 4px 9px; font-size: 0.70rem; border-radius: 8px;">${q}</button>
       `).join('')}
     </div>
   `;
-
-  chipsContainer.querySelectorAll('.chip-query').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      const q = chip.getAttribute('data-query');
-      if (q) {
-        const input = document.getElementById('rag-input');
-        if (input) input.value = q;
-        if (typeof submitRagQuery === 'function') {
-          submitRagQuery(q);
-        }
-      }
-    });
-  });
 }
 
-// Global Click Delegation for Suggested Inquiries in Chat, Greeting Card, or Presets
+function updateQueryChipsForObject(objectName, questions = []) {
+  if (!objectName || !questions || questions.length === 0) {
+    activeInquiryPool = [];
+    activeDisplayedInquiries = [];
+    askedInquiryHistory.clear();
+    renderQueryChips('', []);
+    return;
+  }
+  initObjectQuestionPool(objectName, questions);
+}
+
+// Single Delegated Click Handler for Suggested Inquiries (Zero Duplicate Firing)
 document.addEventListener('click', (e) => {
   const queryBtn = e.target.closest('.raycast-query-btn, .chip-query');
   if (queryBtn) {
+    e.preventDefault();
+    e.stopPropagation();
     const q = queryBtn.getAttribute('data-query');
     if (q) {
+      // Remove clicked inquiry and cycle in the next fresh one from candidate pool
+      onSuggestedInquirySelected(q);
+
       const input = document.getElementById('rag-input');
       if (input) input.value = q;
       if (typeof submitRagQuery === 'function') {

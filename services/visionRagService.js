@@ -232,6 +232,8 @@ export async function enrichWithTavily(objectName) {
     const suggestedQuestions = [
       `What are the historical origins and design significance of ${objectName}?`,
       `What materials and engineering techniques are typically used in ${objectName}?`,
+      `What are the technical armor and combat specifications of ${objectName}?`,
+      `When and where was ${objectName} primarily produced or deployed?`,
       `How can I best view the geometry and details of this 3D scan?`,
     ];
 
