@@ -205,7 +205,7 @@ Splatris includes pre-packaged demo 3D splat models in `uploads/models/`, allowi
    - `NEBIUS_API_KEY` = `your_nebius_api_key`
    - `NEBIUS_BASE_URL` = `https://api.tokenfactory.nebius.com/v1`
    - `TAVILY_API_KEY` = `your_tavily_api_key`
-6. Click **Deploy Web Service**. Render will generate a permanent, secure HTTPS URL (e.g., `https://splatris.onrender.com`).
+6. Click **Deploy Web Service**. Render will generate a permanent, secure HTTPS URL (e.g., `https://your-service-name.onrender.com`).
 
 ---
 
