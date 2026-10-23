@@ -222,6 +222,17 @@ Splatris includes pre-packaged demo 3D splat models in `uploads/models/`, allowi
 
 ---
 
+## 🏛️ Benchmark Datasets & Attributions
+
+For testing and demonstrating high-precision photogrammetry and loop-closure calibration, Splatris leverages the standard **M60 Tank** benchmark dataset from the renowned **Tanks and Temples** benchmark:
+
+- **Dataset:** `M60` (Intermediate Category)
+- **Source:** [Tanks and Temples: Benchmarking Large-Scale Scene Reconstruction](https://tanksandtemples.org/download/)
+- **Citation:** Knapitsch, Park, Zhou, Qian, and Koltun, *ACM Transactions on Graphics (SIGGRAPH 2017)*.
+
+---
+
 ## 📜 License
 
 This project is licensed under the **Apache License 2.0**. See the [LICENSE](LICENSE) file for complete details.
+
