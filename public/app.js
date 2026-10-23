@@ -1820,7 +1820,7 @@ function isRenderDemoDeployment() {
   return host.includes('onrender.com');
 }
 
-const RENDER_DEMO_MSG = 'Demo mode active with pre-trained 3D models. To train custom scenes, clone the repo or spin up a GPU worker.';
+const RENDER_DEMO_MSG = 'Demo mode active with pre-trained 3D models. To train custom scenes or re-process on GPU, clone the repo or spin up a Nebius GPU worker.';
 
 // Dropzone interactions
 if (dropzone && fileInput) {
@@ -1920,6 +1920,10 @@ const btnResumeLabel = document.getElementById('btn-resume-label');
 const btnAbortSuspended = document.getElementById('btn-abort-suspended');
 
 function showGpuSuspendedBanner(detailMsg) {
+  if (typeof isRenderDemoDeployment === 'function' && isRenderDemoDeployment()) {
+    showToast(RENDER_DEMO_MSG, 'info', 6000);
+    return;
+  }
   if (gpuSuspendedBanner) {
     gpuSuspendedBanner.classList.remove('hidden');
     gpuSuspendedBanner.style.removeProperty('display');
@@ -2011,6 +2015,10 @@ function updatePipelineUIForActiveScene() {
 }
 
 async function triggerFastReprocess() {
+  if (typeof isRenderDemoDeployment === 'function' && isRenderDemoDeployment()) {
+    showToast(RENDER_DEMO_MSG, 'info', 6000);
+    return;
+  }
   const active = STATE.activeScene;
   if (!active) {
     showToast('No active video scene found to re-process.', 'warning', 3500);
@@ -2103,6 +2111,28 @@ async function triggerFastReprocess() {
 if (btnReprocessAction) {
   btnReprocessAction.addEventListener('click', (e) => {
     e.preventDefault();
+    if (typeof isRenderDemoDeployment === 'function' && isRenderDemoDeployment()) {
+      const targetMethod = STATE.trainingMethod; // 'triangle' or '3dgs'
+      // In demo mode: check if matching pre-trained model exists in recentSpaces
+      const allChips = Array.from(document.querySelectorAll('.scene-chip'));
+      const matchingChip = allChips.find((chip) => {
+        const chipText = (chip.textContent || '').toLowerCase();
+        if (targetMethod === 'triangle') {
+          return chipText.includes('triangle') || chipText.includes('mesh');
+        } else {
+          return chipText.includes('standard') || chipText.includes('3dgs');
+        }
+      });
+
+      if (matchingChip && !matchingChip.classList.contains('active')) {
+        showToast(`⚡ Demo Mode: Switched to pre-trained ${targetMethod === 'triangle' ? 'Triangle Splatting' : 'Standard 3DGS'} scene!`, 'success', 4500);
+        matchingChip.click();
+        return;
+      }
+
+      showToast(RENDER_DEMO_MSG, 'info', 6000);
+      return;
+    }
     triggerFastReprocess();
   });
 }
@@ -2110,6 +2140,10 @@ if (btnReprocessAction) {
 if (btnReprocessUploadNew) {
   btnReprocessUploadNew.addEventListener('click', (e) => {
     e.preventDefault();
+    if (typeof isRenderDemoDeployment === 'function' && isRenderDemoDeployment()) {
+      showToast(RENDER_DEMO_MSG, 'info', 6000);
+      return;
+    }
     STATE.userWantsNewUpload = true;
     if (reprocessBanner) {
       reprocessBanner.classList.add('hidden');
@@ -2127,6 +2161,11 @@ if (btnReprocessUploadNew) {
 // Preemptible GPU Suspended & Offline Banner Listeners
 if (btnResumeTraining) {
   btnResumeTraining.addEventListener('click', async () => {
+    if (typeof isRenderDemoDeployment === 'function' && isRenderDemoDeployment()) {
+      showToast(RENDER_DEMO_MSG, 'info', 6000);
+      hideGpuSuspendedBanner();
+      return;
+    }
     const jobId = STATE.activeJobId || localStorage.getItem('splatris_active_job_id');
     const sceneId = STATE.activeScene?.jobId || STATE.activeScene?.sceneId || localStorage.getItem('splatris_active_scene_id');
 
@@ -6060,6 +6099,9 @@ async function loadRecentScenes() {
  * Re-attaches progress bar, timer, and polling automatically on load or scene select.
  */
 async function checkAndReconnectActiveJob(targetSceneId = null) {
+  if (typeof isRenderDemoDeployment === 'function' && isRenderDemoDeployment()) {
+    return false;
+  }
   const storedJobId = localStorage.getItem('splatris_active_job_id');
   const storedSceneId = targetSceneId || localStorage.getItem('splatris_active_scene_id') || STATE.activeScene?.jobId;
   const lookupId = storedJobId || storedSceneId;
